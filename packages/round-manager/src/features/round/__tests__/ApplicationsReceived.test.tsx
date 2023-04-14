@@ -24,7 +24,7 @@ import {
   getApplicationsByRoundId,
   updateApplicationStatuses,
 } from "../../api/application";
-import { ApplicationStatus, ProgressStatus } from "../../api/types";
+import { ProgressStatus } from "../../api/types";
 
 jest.mock("../../api/application");
 jest.mock("../../common/Auth", () => ({
