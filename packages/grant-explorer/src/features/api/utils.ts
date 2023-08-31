@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import { ethers } from "ethers";
-import { IPFSObject, PayoutToken } from "./types";
+import { CartProject, IPFSObject, PayoutToken } from "./types";
 import { ChainId, RedstoneTokenIds } from "common";
 import { useSearchParams } from "react-router-dom";
+import { zeroAddress } from "viem";
 
 export function useDebugMode(): boolean {
   const [searchParams] = useSearchParams();
@@ -58,13 +58,15 @@ export const CHAINS: Record<
 export const TokenNamesAndLogos: Record<string, string> = {
   FTM: "./logos/fantom-logo.svg",
   BUSD: "./logos/busd-logo.svg",
+  USDC: "./logos/usdc-logo.svg",
   DAI: "./logos/dai-logo.svg",
   ETH: "./logos/ethereum-eth-logo.svg",
   OP: "./logos/optimism-logo.svg",
   PGN: "./logos/pgn-logo.svg",
+  GcV: "./logos/fantom-gcv-logo.png",
 };
 
-const MAINNET_TOKENS: PayoutToken[] = [
+export const MAINNET_TOKENS: PayoutToken[] = [
   {
     name: "DAI",
     chainId: ChainId.MAINNET,
@@ -72,18 +74,22 @@ const MAINNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["DAI"],
     redstoneTokenId: RedstoneTokenIds["DAI"],
+    defaultForVoting: false,
+    canVote: true,
   },
   {
     name: "ETH",
     chainId: ChainId.MAINNET,
-    address: ethers.constants.AddressZero,
+    address: zeroAddress,
     decimal: 18,
     logo: TokenNamesAndLogos["ETH"],
     redstoneTokenId: RedstoneTokenIds["ETH"],
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
-const OPTIMISM_MAINNET_TOKENS: PayoutToken[] = [
+export const OPTIMISM_MAINNET_TOKENS: PayoutToken[] = [
   {
     name: "DAI",
     chainId: ChainId.OPTIMISM_MAINNET_CHAIN_ID,
@@ -91,14 +97,19 @@ const OPTIMISM_MAINNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["DAI"],
     redstoneTokenId: RedstoneTokenIds["DAI"],
+    permitVersion: "2",
+    defaultForVoting: false,
+    canVote: true,
   },
   {
     name: "ETH",
     chainId: ChainId.OPTIMISM_MAINNET_CHAIN_ID,
-    address: ethers.constants.AddressZero,
+    address: zeroAddress,
     decimal: 18,
     logo: TokenNamesAndLogos["ETH"],
     redstoneTokenId: RedstoneTokenIds["ETH"],
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
@@ -110,14 +121,18 @@ const FANTOM_MAINNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["FTM"],
     redstoneTokenId: RedstoneTokenIds["FTM"],
+    defaultForVoting: false,
+    canVote: false,
   },
   {
     name: "FTM",
     chainId: ChainId.FANTOM_MAINNET_CHAIN_ID,
-    address: ethers.constants.AddressZero,
+    address: zeroAddress,
     decimal: 18,
     logo: TokenNamesAndLogos["FTM"],
     redstoneTokenId: RedstoneTokenIds["FTM"],
+    defaultForVoting: false,
+    canVote: false,
   },
   {
     name: "BUSD",
@@ -126,6 +141,8 @@ const FANTOM_MAINNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["BUSD"],
     redstoneTokenId: RedstoneTokenIds["BUSD"],
+    defaultForVoting: false,
+    canVote: false,
   },
   {
     name: "DAI",
@@ -134,17 +151,32 @@ const FANTOM_MAINNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["DAI"],
     redstoneTokenId: RedstoneTokenIds["DAI"],
+    defaultForVoting: false,
+    canVote: false,
+  },
+  {
+    name: "GcV",
+    chainId: ChainId.FANTOM_MAINNET_CHAIN_ID,
+    address: "0x83791638da5EB2fAa432aff1c65fbA47c5D29510",
+    decimal: 18,
+    logo: TokenNamesAndLogos["GcV"],
+    redstoneTokenId: RedstoneTokenIds["DAI"], // We use DAI to keep the valueless token to 1$
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
 const GOERLI_TESTNET_TOKENS: PayoutToken[] = [
   {
-    name: "BUSD",
+    name: "USDC",
     chainId: ChainId.GOERLI_CHAIN_ID,
-    address: "0xa7c3bf25ffea8605b516cf878b7435fe1768c89b",
-    decimal: 18,
-    logo: TokenNamesAndLogos["BUSD"],
-    redstoneTokenId: RedstoneTokenIds["BUSD"],
+    address: "0x07865c6E87B9F70255377e024ace6630C1Eaa37F",
+    decimal: 6,
+    logo: TokenNamesAndLogos["USDC"],
+    redstoneTokenId: RedstoneTokenIds["USDC"],
+    permitVersion: "2",
+    defaultForVoting: false,
+    canVote: true,
   },
   {
     name: "DAI",
@@ -153,14 +185,18 @@ const GOERLI_TESTNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["DAI"],
     redstoneTokenId: RedstoneTokenIds["DAI"],
+    defaultForVoting: false,
+    canVote: true,
   },
   {
     name: "ETH",
     chainId: ChainId.GOERLI_CHAIN_ID,
-    address: ethers.constants.AddressZero,
+    address: zeroAddress,
     decimal: 18,
     logo: TokenNamesAndLogos["ETH"],
     redstoneTokenId: RedstoneTokenIds["ETH"],
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
@@ -172,6 +208,8 @@ const FANTOM_TESTNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["DAI"],
     redstoneTokenId: RedstoneTokenIds["DAI"],
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
@@ -183,14 +221,18 @@ const PGN_TESTNET_TOKENS: PayoutToken[] = [
     decimal: 18,
     logo: TokenNamesAndLogos["DAI"],
     redstoneTokenId: RedstoneTokenIds["DAI"],
+    defaultForVoting: false,
+    canVote: true,
   },
   {
     name: "ETH",
     chainId: ChainId.PGN_TESTNET,
-    address: ethers.constants.AddressZero,
+    address: zeroAddress,
     decimal: 18,
     logo: TokenNamesAndLogos["ETH"],
     redstoneTokenId: RedstoneTokenIds["ETH"],
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
@@ -198,10 +240,12 @@ const PGN_MAINNET_TOKENS: PayoutToken[] = [
   {
     name: "ETH",
     chainId: ChainId.PGN,
-    address: ethers.constants.AddressZero,
+    address: zeroAddress,
     decimal: 18,
     logo: TokenNamesAndLogos["ETH"],
     redstoneTokenId: RedstoneTokenIds["ETH"],
+    defaultForVoting: true,
+    canVote: true,
   },
 ];
 
@@ -216,7 +260,7 @@ export const payoutTokens = [
 ];
 
 type PayoutTokensMap = Record<ChainId, PayoutToken[]>;
-const payoutTokensMap: PayoutTokensMap = {
+export const payoutTokensMap: PayoutTokensMap = {
   [ChainId.GOERLI_CHAIN_ID]: GOERLI_TESTNET_TOKENS,
   [ChainId.MAINNET]: MAINNET_TOKENS,
   [ChainId.OPTIMISM_MAINNET_CHAIN_ID]: OPTIMISM_MAINNET_TOKENS,
@@ -395,32 +439,6 @@ export const getDaysLeft = (epochTime: number) => {
   return differenceInDays;
 };
 
-export const listenForOutsideClicks = ({
-  listening,
-  setListening,
-  menuRef,
-  setOpen,
-}: {
-  listening: boolean;
-  setListening: React.Dispatch<React.SetStateAction<boolean>>;
-  menuRef: React.MutableRefObject<HTMLDivElement | null>;
-  setOpen: React.Dispatch<React.SetStateAction<boolean>>;
-}) => {
-  return () => {
-    if (listening) return;
-    if (!menuRef.current) return;
-    setListening(true);
-    [`click`, `touchstart`].forEach((type) => {
-      document.addEventListener(type, (evt) => {
-        if (menuRef.current && menuRef.current.contains(evt.target as Node)) {
-          return;
-        }
-        setOpen(false);
-      });
-    });
-  };
-};
-
 export function getChainIds(): number[] {
   const isProduction = process.env.REACT_APP_ENV === "production";
   if (isProduction) {
@@ -431,6 +449,45 @@ export function getChainIds(): number[] {
       Number(ChainId.PGN),
     ];
   } else {
-    return Object.values(ChainId).map((chainId) => Number(chainId));
+    return Object.values(ChainId)
+      .map((chainId) => Number(chainId))
+      .filter((id) => !isNaN(id));
   }
 }
+
+type GroupedCartProjects = {
+  [chainId: number]: {
+    [roundId: string]: CartProject[];
+  };
+};
+
+export type GroupedCartProjectsByRoundId = {
+  [roundId: string]: CartProject[];
+};
+
+export const groupProjectsInCart = (
+  cartProjects: CartProject[]
+): GroupedCartProjects => {
+  // Initialize an empty object to store the grouped cart projects
+  const groupedCartProjects: GroupedCartProjects = {};
+
+  // Iterate over each cart project and group them by chainId and roundId
+  cartProjects.forEach((cartProject) => {
+    const { chainId, roundId } = cartProject;
+
+    // If the chainId doesn't exist in the groupedCartProjects object, create it
+    if (!groupedCartProjects[chainId]) {
+      groupedCartProjects[chainId] = {};
+    }
+
+    // If the roundId doesn't exist in the chainId group, create it
+    if (!groupedCartProjects[chainId][roundId]) {
+      groupedCartProjects[chainId][roundId] = [];
+    }
+
+    // Add the cartProject to the corresponding roundId group
+    groupedCartProjects[chainId][roundId].push(cartProject);
+  });
+
+  return groupedCartProjects;
+};

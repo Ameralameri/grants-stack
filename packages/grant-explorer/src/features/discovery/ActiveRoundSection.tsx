@@ -9,12 +9,12 @@ import RoundCard from "./RoundCard";
 type ActiveRounds = {
   isLoading: boolean;
   setSearchQuery: Dispatch<SetStateAction<string>>;
-  roundOverview: RoundOverview[];
+  roundOverview?: RoundOverview[];
   searchQuery: string;
 };
 
 const ActiveRoundsSection = (props: ActiveRounds) => {
-  const activeRoundsCount = props.roundOverview.length;
+  const activeRoundsCount = props.roundOverview?.length ?? 0;
   const [order, setOrder] = useState<string>("round_asc");
 
   function sortRoundsByTime(rounds: RoundOverview[], order: string) {
@@ -70,7 +70,7 @@ const ActiveRoundsSection = (props: ActiveRounds) => {
         ) : null}
         {activeRoundsCount > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 md:gap-6 2xl:grid-cols-4">
-            {sortRoundsByTime(props.roundOverview, order).map(
+            {sortRoundsByTime(props.roundOverview ?? [], order).map(
               (round, index) => {
                 return <RoundCard key={index} round={round} />;
               }
