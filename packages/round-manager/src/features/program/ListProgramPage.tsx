@@ -9,18 +9,19 @@ import {
 import { Spinner } from "../common/Spinner";
 import Navbar from "../common/Navbar";
 import {
-  CardFooter,
-  CardFooterContent,
   BasicCard,
   CardContent,
   CardDescription,
+  CardFooter,
+  CardFooterContent,
   CardsContainer,
   CardTitle,
 } from "../common/styles";
 import { ReactComponent as Banner } from "../../assets/programs/city-voxel.svg";
-import Footer from "../common/Footer";
+import Footer from "common/src/components/Footer";
 import { datadogLogs } from "@datadog/browser-logs";
-import { usePrograms } from "../../context/ProgramContext";
+import { usePrograms } from "../../context/program/ReadProgramContext";
+import { ProgressStatus } from "../api/types";
 
 interface ProgramCardProps {
   floatingIcon: JSX.Element;
@@ -72,13 +73,14 @@ function ListPrograms() {
   datadogLogs.logger.info("====> Route: /");
   datadogLogs.logger.info(`====> URL: ${window.location.href}`);
 
-  const { programs, isLoading, listProgramsError } = usePrograms();
+  const { programs, fetchProgramsStatus, listProgramsError } = usePrograms();
 
   function hasNoPrograms() {
     return !programs || programs.length === 0;
   }
 
-  const isSuccess = !isLoading && !listProgramsError;
+  const isSuccess =
+    fetchProgramsStatus === ProgressStatus.IS_SUCCESS && !listProgramsError;
 
   const programList = programs.map((program, key) => (
     <Link to={`/program/${program.id}`} key={key}>
@@ -89,7 +91,7 @@ function ListPrograms() {
             <RefreshIcon className="h-6 w-6 text-grey-500" aria-hidden="true" />
           </div>
         }
-        title={program.metadata!.name}
+        title={program.metadata.name}
         description={`${program.operatorWallets.length} Round Operators`}
         footerContent={
           <p className="text-violet-400" data-testid="program-card">
@@ -105,29 +107,32 @@ function ListPrograms() {
     <div className="bg-grey-150">
       <Navbar programCta={isSuccess} />
       <header className="mb-2.5 bg-grey-500 overflow-hidden">
-        <div className="container mx-auto flex flex-row">
-          <div className="grow p-6 md:pt-14 md:pl-20 lg:pt-32 lg:pl-24">
+        <div className="grid grid-cols-2 grid-flow-col">
+          <div className="row-span-4 md:pt-14 md:pl-20 lg:pt-32 lg:pl-24">
             <h1 className="text-4xl lg:text-6xl text-white font-thin antialiased">
               My Programs
             </h1>
-            <p className="text-xl text-grey-400 mt-2">
-              Create a grant program and manage rounds with independent
-              criteria.
+            <p className="text-xl text-grey-400 mt-4">
+              <span className="block">
+                Create a grant program and manage rounds with
+              </span>
+              <span>independent criteria.</span>
             </p>
           </div>
-          <div className="right-0 hidden md:block">
-            <Banner />
+          <div className="row-span-8 hidden md:block">
+            <Banner className="float-right" />
           </div>
         </div>
       </header>
-      <main className="container mx-auto p-2 md:px-20">
+      <main className="container mx-5 p-2 md:px-20">
         <CardsContainer>
           {isSuccess && hasNoPrograms() && startAProgramCard}
           {programList}
         </CardsContainer>
-
-        {isLoading && <Spinner text="We're fetching your Programs." />}
       </main>
+      {fetchProgramsStatus === ProgressStatus.IN_PROGRESS && (
+        <Spinner text="We're fetching your Programs." />
+      )}
       <Footer />
     </div>
   );

@@ -1,4 +1,5 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+.turbo
 
 # dependencies
 /node_modules
@@ -13,6 +14,7 @@
 
 # IDE
 .idea/
+.vscode/
 
 # misc
 .DS_Store
@@ -21,8 +23,9 @@
 .env.test.local
 .env.production.local
 .env
+.run
 
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 /.eslintcache
+
+/src/types/generated

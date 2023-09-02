@@ -5,8 +5,8 @@ This repository contains packages needed for a user to
 - Explore available Rounds
 - Vote for Projects within a Round
 
-Project Maintained via  : `lerna`
-Build Tool              : `yarn`
+Project Maintained via  : `turborepo`
+Package manager         : `pnpm`
 
 ## Directory Structure
 
@@ -14,53 +14,47 @@ Build Tool              : `yarn`
 .
 ├── .github                     # github specific configuration
 ├── packages
-│   ├── contracts               # contracts built using hardhat
-│   ├── graph                   # graph which indexes data from contracts
 │   ├── round-manager           # react-frontend for round-manager
 │   ├── grant-explorer          # react-frontend for grant-explorer
-├── docs                        # useful documentation
-├── lerna.json                  # lerna config
+│   ├── builder                 # react-frontend for builder
+│   ├── common                  # components and functionality that is shared between projects
+│   ├── eslint-config-gitcoin   # common eslint config for all grants stack projects
 ├── package.json                # root package configuration
 └── README.md
 ```
 
-## Packages
+## Git Hooks
+You can optionally enable pre-commit git hooks that autoformat your changed code using prettier.
 
-### contracts
+```bash
+brew install lefthook
+lefthook install
+```
 
-The contracts needed for running a round can be found within the [contracts package](packages/contracts)
+inspect the current hook configuration in [lefthook.yml](lefthook.yml)
 
-##### Deploy Steps
+## contracts
 
-To know how the contracts should be setup, refer [DEPLOY_STEPS.md](packages/contracts/docs/DEPLOY_STEPS.md)
-
-
-##### Chain Deployment List
-
-To know the addresses are deployed on which network. refer [CHAINS.md](packages/contracts/docs/CHAINS.md)
-
-##### Development
-
-To contribute to this project, fork the project and follow the instructions at [DEV.md](packages/contracts/docs/DEV.md)
-
-This is built and maintained using [hardhat](https://hardhat.org)
+The contracts needed for running a round can be found within the [Allo contracts repository](https://github.com/Allo-Protocol/contracts)
 
 ### graph
 
-This package holds the subgraph which indexs data with regard the
+The subgraph which indexs data with regard the
 - ProgramFactory
 - ProgramImplementation
 - RoundFactory
 - RoundImplementation
 
-More information can be found within the [graph package](packages/graph)
+More information can be found within the [Allo graph repository](https://github.com/Allo-Protocol/graph)
+
+## Packages
 
 ### round-manager
 
 This package serves the app which holds all the features w.r.t to
 
 - creating a program
-- maintaing a program
+- maintaining a program
 - creating a round
 - maintaining a program
 
@@ -68,8 +62,9 @@ More information can be found within the [round-manager package](packages/round-
 
 ##### Development
 
-To contribute to this project, fork the project and follow the instructions at [DEV.md](packages/round-manager/docs/DEV.md)
+We welcome external contributions. Please make sure to familiarize yourself with the [Contribution Guide](CONTRIBUTING.md).
 
+To contribute to this project, fork the project and follow the instructions at [DEV.md](packages/round-manager/docs/DEV.md)
 
 ### grant-explorer
 
@@ -83,11 +78,13 @@ More information can be found within the [grant-explorer package](packages/grant
 
 ##### Development
 
+We welcome external contributions. Please make sure to familiarize yourself with the [Contribution Guide](CONTRIBUTING.md).
+
 To contribute to this project, fork the project and follow the instructions at [DEV.md](packages/grant-explorer/docs/DEV.md)
 
 ##### Hosting
 
-All the frontend dApps are currently hosted presently via [fleek.co](https://fleek.co/).
+All the frontend dApps are hosted via [fleek.co](https://fleek.co/).
 
 Documented below are the environments along with the URL.
 
@@ -98,4 +95,4 @@ Note: Live Deployment should always happen by raising a PR from `main` to `relea
 | Env     | Git Branch | URL                               |
 |---------|------------|-----------------------------------|
 | STAGING | main       | https://rmgitcoin.on.fleek.co/    |
-| LIVE    | release    | https://round-manager.gitcoin.co/ |
+| LIVE    | release    | https://manager.gitcoin.co/ |

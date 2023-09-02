@@ -1,12 +1,28 @@
 module.exports = {
-  content: ["./src/**/*.{js,jsx,ts,tsx}"],
+  content: ["./src/**/*.{js,jsx,ts,tsx}", "../common/src/**/*.{js,jsx,ts,tsx}"],
   theme: {
     extend: {
+      animation: {
+        "pulse-scale": "pulse-scale 2s ease-in-out infinite",
+      },
+      fontSize: {
+        md: "16px",
+      },
       colors: {
         transparent: "transparent",
         black: "#000",
         white: "#FFF",
         grey: {
+          50: "#F3F3F5",
+          100: "#E2E0E7",
+          150: "#F3F3F5",
+          200: "#C4C1CF",
+          250: "#BEBEBE",
+          300: "#A7A2B6",
+          400: "#757087",
+          500: "#0E0333",
+        },
+        gray: {
           100: "#E2E0E7",
           150: "#F3F3F5",
           200: "#C4C1CF",
@@ -46,8 +62,42 @@ module.exports = {
         red: {
           100: "#D44D6E",
         },
+        moon: {
+          100: "#EBEBEB",
+          200: "#CACBCB",
+          300: "#979998",
+          400: "#656A68",
+          500: "#2B3330",
+          600: "#0B110F",
+          700: "#130C03",
+          800: "#000000",
+        },
+      },
+      keyframes: {
+        violetTransition: {
+          "5%": {
+            "background-color": "#F0EBFF",
+            color: "#6F3FF5",
+          },
+          "0%, 80%": {
+            "background-color": "#6F3FF5",
+            color: "#FFF",
+          },
+        },
+        "pulse-scale": {
+          "0%, 100%": {
+            transform: "scale(1)",
+          },
+          "50%": {
+            transform: "scale(2)",
+          },
+        },
       },
     },
   },
-  plugins: [require("@tailwindcss/forms"), require("@tailwindcss/line-clamp")],
+  plugins: [
+    require("@tailwindcss/typography"),
+    require("@tailwindcss/forms"),
+    require("@tailwindcss/line-clamp"),
+  ],
 };

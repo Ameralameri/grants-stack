@@ -1,6 +1,7 @@
 import ListProgramPage from "../ListProgramPage";
 import { screen } from "@testing-library/react";
-import { makeProgramData, renderWithContext } from "../../../test-utils";
+import { makeProgramData, renderWithProgramContext } from "../../../test-utils";
+import { ProgressStatus } from "../../api/types";
 
 jest.mock("../../common/Auth", () => ({
   useWallet: () => ({
@@ -16,22 +17,28 @@ jest.mock("@rainbow-me/rainbowkit", () => ({
 
 describe("<ListProgramPage />", () => {
   it("does not render a list of programs when no programs have been created", () => {
-    renderWithContext(<ListProgramPage />, { programs: [], isLoading: false });
+    renderWithProgramContext(<ListProgramPage />, {
+      programs: [],
+      fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+    });
 
     expect(screen.queryAllByTestId("program-card")).toHaveLength(0);
   });
 
   it("renders a list of programs when programs have been created", async () => {
-    renderWithContext(<ListProgramPage />, {
+    renderWithProgramContext(<ListProgramPage />, {
       programs: [makeProgramData(), makeProgramData()],
-      isLoading: false,
+      fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
     });
 
     expect(await screen.findAllByTestId("program-card")).toHaveLength(2);
   });
 
   it("shows loading while fetching list of programs", async () => {
-    renderWithContext(<ListProgramPage />, { isLoading: true, programs: [] });
+    renderWithProgramContext(<ListProgramPage />, {
+      fetchProgramsStatus: ProgressStatus.IN_PROGRESS,
+      programs: [],
+    });
 
     screen.getByTestId("loading-spinner");
   });

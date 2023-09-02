@@ -1,30 +1,33 @@
 import {
   ArrowNarrowLeftIcon,
   CheckIcon,
-  MailIcon,
   ShieldCheckIcon,
   XCircleIcon,
   XIcon,
 } from "@heroicons/react/solid";
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
 import {
-  useListGrantApplicationsQuery,
-  useUpdateGrantApplicationMutation,
-} from "../api/services/grantApplication";
-import { useListRoundsQuery } from "../api/services/round";
+  Link,
+  NavigateFunction,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import ConfirmationModal from "../common/ConfirmationModal";
 import Navbar from "../common/Navbar";
 import { useWallet } from "../common/Auth";
-import { Button } from "../common/styles";
+import { Button } from "common/src/styles";
 import { ReactComponent as TwitterIcon } from "../../assets/twitter-logo.svg";
 import { ReactComponent as GithubIcon } from "../../assets/github-logo.svg";
-import Footer from "../common/Footer";
+import Footer from "common/src/components/Footer";
 import { datadogLogs } from "@datadog/browser-logs";
+import { useBulkUpdateGrantApplications } from "../../context/application/BulkUpdateGrantApplicationContext";
+import ProgressModal from "../common/ProgressModal";
 import { PassportVerifier } from "@gitcoinco/passport-sdk-verifier";
 import {
   AnswerBlock,
   GrantApplication,
+  ProgressStatus,
+  ProgressStep,
   ProjectCredentials,
 } from "../api/types";
 import { VerifiableCredential } from "@gitcoinco/passport-sdk-types";
@@ -32,36 +35,41 @@ import { Lit } from "../api/lit";
 import { utils } from "ethers";
 import NotFoundPage from "../common/NotFoundPage";
 import AccessDenied from "../common/AccessDenied";
+import { useApplicationByRoundId } from "../../context/application/ApplicationContext";
+import { Spinner } from "../common/Spinner";
+import { ApplicationBanner, ApplicationLogo } from "./BulkApplicationCommon";
+import { useRoundById } from "../../context/round/RoundContext";
+import ErrorModal from "../common/ErrorModal";
+import { errorModalDelayMs } from "../../constants";
+
+import {
+  CalendarIcon,
+  formatDateWithOrdinal,
+  VerifiedCredentialState,
+} from "common";
+import { renderToHTML } from "common";
+import { useDebugMode } from "../../hooks";
 
 type ApplicationStatus = "APPROVED" | "REJECTED";
-
-enum VerifiedCredentialState {
-  VALID,
-  INVALID,
-  PENDING,
-}
-
-enum ApplicationQuestions {
-  GITHUB = "Github",
-  GITHUB_ORGANIZATION = "Github Organization",
-  TWITTER = "Twitter",
-  EMAIL = "Email",
-  FUNDING_SOURCE = "Funding Source",
-  PROFIT_2022 = "Profit2022",
-  TEAM_SIZE = "Team Size",
-}
 
 export const IAM_SERVER =
   "did:key:z6MkghvGHLobLEdj1bgRLhS4LPGJAvbMA1tn2zcRyqmYU5LC";
 
+const verifier = new PassportVerifier();
+
 export default function ViewApplicationPage() {
-  datadogLogs.logger.info("====> Route: /program/create");
+  const navigate = useNavigate();
+  datadogLogs.logger.info("====> Route: /round/:roundId/application/:id");
   datadogLogs.logger.info(`====> URL: ${window.location.href}`);
 
   const [reviewDecision, setReviewDecision] = useState<
     ApplicationStatus | undefined
   >(undefined);
+
   const [openModal, setOpenModal] = useState(false);
+  const [openProgressModal, setOpenProgressModal] = useState(false);
+  const [openErrorModal, setOpenErrorModal] = useState(false);
+
   const [verifiedProviders, setVerifiedProviders] = useState<{
     [key: string]: VerifiedCredentialState;
   }>({
@@ -70,99 +78,120 @@ export default function ViewApplicationPage() {
   });
 
   const { roundId, id } = useParams() as { roundId: string; id: string };
-  const { chain, address, provider, signer } = useWallet();
-  const navigate = useNavigate();
-  const verifier = new PassportVerifier();
+  const { chain, address } = useWallet();
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const { applications, isLoading } = useApplicationByRoundId(roundId!);
+  const filteredApplication = applications?.filter((a) => a.id == id) || [];
+  const application = filteredApplication[0];
 
   const {
-    application,
-    isLoading,
-    isSuccess: isApplicationFetched,
-  } = useListGrantApplicationsQuery(
-    /* Non-issue since if ID was null or undef., we wouldn't render this page, but a 404 instead  */
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    { roundId: roundId!, signerOrProvider: provider, id },
-    {
-      selectFromResult: ({ data, isLoading, isSuccess }) => ({
-        application: data?.find((application) => application.id === id),
-        isLoading,
-        isSuccess,
-      }),
-    }
-  );
+    bulkUpdateGrantApplications,
+    contractUpdatingStatus,
+    indexingStatus,
+  } = useBulkUpdateGrantApplications();
 
-  const credentials: ProjectCredentials =
-    application?.project!.credentials ?? {};
+  const isUpdateLoading =
+    contractUpdatingStatus == ProgressStatus.IN_PROGRESS ||
+    indexingStatus == ProgressStatus.IN_PROGRESS;
+
+  const progressSteps: ProgressStep[] = [
+    {
+      name: "Updating",
+      description: `Updating the application status on the contract.`,
+      status: contractUpdatingStatus,
+    },
+    {
+      name: "Indexing",
+      description: "The subgraph is indexing the data.",
+      status: indexingStatus,
+    },
+    {
+      name: "Redirecting",
+      description: "Just another moment while we finish things up.",
+      status:
+        indexingStatus === ProgressStatus.IS_SUCCESS
+          ? ProgressStatus.IN_PROGRESS
+          : ProgressStatus.NOT_STARTED,
+    },
+  ];
 
   useEffect(() => {
-    if (!credentials) {
-      return;
+    if (contractUpdatingStatus === ProgressStatus.IS_ERROR) {
+      setTimeout(() => {
+        setOpenProgressModal(false);
+        setOpenErrorModal(true);
+      }, errorModalDelayMs);
     }
-    const verify = async () => {
-      const newVerifiedProviders: { [key: string]: VerifiedCredentialState } = {
-        ...verifiedProviders,
-      };
-      for (const provider of Object.keys(verifiedProviders)) {
-        const verifiableCredential = credentials[provider];
-        if (verifiableCredential) {
-          newVerifiedProviders[provider] = await isVerified(
-            verifiableCredential,
-            verifier,
-            provider,
-            application
-          );
+
+    if (indexingStatus === ProgressStatus.IS_ERROR) {
+      redirectToViewApplicationPage(navigate, 5000, roundId, id);
+    } else if (indexingStatus == ProgressStatus.IS_SUCCESS) {
+      redirectToViewRoundPage(navigate, 0, roundId);
+    }
+  }, [navigate, contractUpdatingStatus, indexingStatus, id, roundId]);
+
+  useEffect(() => {
+    const applicationHasLoadedWithProjectOwners =
+      !isLoading && application?.project?.owners;
+    if (applicationHasLoadedWithProjectOwners) {
+      const credentials: ProjectCredentials =
+        application?.project?.credentials ?? {};
+
+      if (!credentials) {
+        return;
+      }
+      const verify = async () => {
+        const newVerifiedProviders: { [key: string]: VerifiedCredentialState } =
+          { ...verifiedProviders };
+        for (const provider of Object.keys(verifiedProviders)) {
+          const verifiableCredential = credentials[provider];
+          if (verifiableCredential) {
+            newVerifiedProviders[provider] = await isVerified(
+              verifiableCredential,
+              verifier,
+              provider,
+              application
+            );
+          }
         }
+
+        setVerifiedProviders(newVerifiedProviders);
+      };
+      verify();
+    }
+  }, [application, application?.project?.owners, isLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { round } = useRoundById(roundId);
+
+  const handleReview = async () => {
+    try {
+      if (!application) {
+        throw "error: application does not exist";
       }
 
-      setVerifiedProviders(newVerifiedProviders);
-    };
-
-    verify();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const { round } = useListRoundsQuery(
-    { signerOrProvider: provider, roundId: roundId },
-    {
-      selectFromResult: ({ data }) => ({
-        round: data?.find((round) => round.id === roundId),
-      }),
-    }
-  );
-
-  const [updateGrantApplication, { isLoading: updating }] =
-    useUpdateGrantApplicationMutation();
-
-  const handleUpdateGrantApplication = async () => {
-    try {
+      setOpenProgressModal(true);
       setOpenModal(false);
 
-      await updateGrantApplication({
-        roundId,
-        application: {
-          status: reviewDecision!,
-          id: application!.id,
-          round: roundId!,
-          recipient: application!.recipient,
-          projectsMetaPtr: application!.projectsMetaPtr,
-        },
-        signer,
-        provider,
-      }).unwrap();
+      application.status = reviewDecision;
 
-      navigate(0);
-    } catch (e) {
-      console.error(e);
+      await bulkUpdateGrantApplications({
+        roundId: roundId,
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        applications: applications!,
+        selectedApplications: [application],
+      });
+    } catch (error) {
+      datadogLogs.logger.error(
+        `error: handleReview - ${error}, roundId - ${roundId}`
+      );
+      console.error("handleReview", error);
     }
   };
 
   const confirmReviewDecision = (status: ApplicationStatus) => {
     setReviewDecision(status);
     setOpenModal(true);
-  };
-
-  const handleCancelModal = () => {
-    setOpenModal(false);
-    setTimeout(() => setReviewDecision(undefined), 500);
   };
 
   const getVerifiableCredentialVerificationResultView = (provider: string) => {
@@ -194,19 +223,23 @@ export default function ViewApplicationPage() {
 
   const [applicationExists, setApplicationExists] = useState(true);
   const [hasAccess, setHasAccess] = useState(true);
+  const debugModeEnabled = useDebugMode();
 
   useEffect(() => {
-    if (isApplicationFetched) {
+    if (!isLoading) {
       setApplicationExists(!!application);
-      if (round) {
-        round.operatorWallets?.includes(address?.toLowerCase())
-          ? setHasAccess(true)
-          : setHasAccess(false);
-      } else {
+
+      /* In debug mode, give frontend access to all rounds */
+      if (debugModeEnabled) {
         setHasAccess(true);
+        return;
+      }
+
+      if (round) {
+        setHasAccess(!!round.operatorWallets?.includes(address?.toLowerCase()));
       }
     }
-  }, [address, application, isApplicationFetched, round]);
+  }, [address, application, isLoading, round, debugModeEnabled]);
 
   const [answerBlocks, setAnswerBlocks] = useState<AnswerBlock[]>();
   useEffect(() => {
@@ -230,7 +263,10 @@ export default function ViewApplicationPage() {
               const encryptedString: Blob = await response.blob();
 
               const lit = new Lit({
-                chain: chain.name.toLowerCase(),
+                chain:
+                  chain.name.toLowerCase() === "pgn"
+                    ? "publicGoodsNetwork"
+                    : chain.name.toLowerCase(),
                 contract: utils.getAddress(roundId),
               });
 
@@ -244,6 +280,9 @@ export default function ViewApplicationPage() {
                 answer: decryptedString,
               };
             } catch (error) {
+              datadogLogs.logger.error(`error: decryptAnswers - ${error}`);
+              console.error("decryptAnswers", error);
+
               _answerBlock = {
                 ..._answerBlock,
                 answer: "N/A",
@@ -257,23 +296,22 @@ export default function ViewApplicationPage() {
       setAnswerBlocks(_answerBlocks);
     };
 
-    if (isApplicationFetched && hasAccess) {
+    if (!isLoading && hasAccess) {
       decryptAnswers();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [application, isLoading, hasAccess, isApplicationFetched]);
+  }, [application, hasAccess, isLoading]);
 
-  const getAnswer = (question: string) => {
-    const answerBlock = answerBlocks?.find(
-      (answerBlock: AnswerBlock) => answerBlock.question === question
-    );
-    return answerBlock ? answerBlock.answer : "N/A";
-  };
+  // Handle case where project github is not set but user github is set. if both are not available, set to null
+  const registeredGithub =
+    application?.project?.projectGithub ?? application?.project?.userGithub;
 
-  return (
+  return isLoading ? (
+    <Spinner text="We're fetching the round application." />
+  ) : (
     <>
       {!applicationExists && <NotFoundPage />}
-      {!hasAccess && <AccessDenied />}
+      {applicationExists && !hasAccess && <AccessDenied />}
       {applicationExists && hasAccess && (
         <>
           <Navbar />
@@ -286,27 +324,23 @@ export default function ViewApplicationPage() {
                 </Link>
               </div>
               <div>
-                <div>
-                  <img
-                    className="h-32 w-full object-cover lg:h-80 rounded"
-                    src={`https://${
-                      process.env.REACT_APP_PINATA_GATEWAY
-                    }/ipfs/${application?.project!.bannerImg}`}
-                    alt=""
+                {application && (
+                  <ApplicationBanner
+                    classNameOverride="h-32 w-full object-cover lg:h-80 rounded"
+                    application={application}
                   />
-                </div>
+                )}
                 <div className="pl-4 sm:pl-6 lg:pl-8">
                   <div className="-mt-12 sm:-mt-16 sm:flex sm:items-end sm:space-x-5">
                     <div className="flex">
-                      <img
-                        className="h-24 w-24 rounded-full ring-4 ring-white bg-white sm:h-32 sm:w-32"
-                        src={`https://${
-                          process.env.REACT_APP_PINATA_GATEWAY
-                        }/ipfs/${application?.project!.logoImg}`}
-                        alt=""
-                      />
+                      {application && (
+                        <ApplicationLogo
+                          classNameOverride="h-24 w-24 rounded-full ring-4 ring-white bg-white sm:h-32 sm:w-32"
+                          application={application}
+                        />
+                      )}
                     </div>
-                    <div className="mt-6 sm:flex-1 sm:min-w-0 sm:flex sm:items-center sm:justify-end sm:space-x-6 sm:pb-1">
+                    <div className="mt-16 sm:flex-1 sm:min-w-0 sm:flex sm:items-center sm:justify-end sm:space-x-6 sm:pb-1">
                       <div className="mt-6 flex flex-col justify-stretch space-y-3 sm:flex-row sm:space-y-0 sm:space-x-4">
                         <Button
                           type="button"
@@ -315,8 +349,8 @@ export default function ViewApplicationPage() {
                               ? "solid"
                               : "outline"
                           }
-                          className="inline-flex justify-center px-4 py-2 text-sm"
-                          disabled={isLoading || updating}
+                          className="inline-flex justify-center px-4 py-2 text-sm m-auto"
+                          disabled={isLoading || isUpdateLoading}
                           onClick={() => confirmReviewDecision("APPROVED")}
                         >
                           <CheckIcon
@@ -335,12 +369,12 @@ export default function ViewApplicationPage() {
                               : "outline"
                           }
                           className={
-                            "inline-flex justify-center px-4 py-2 text-sm" +
+                            "inline-flex justify-center px-4 py-2 text-sm m-auto" +
                             (application?.status === "REJECTED"
                               ? ""
                               : "text-grey-500")
                           }
-                          disabled={isLoading || updating}
+                          disabled={isLoading || isUpdateLoading}
                           onClick={() => confirmReviewDecision("REJECTED")}
                         >
                           <XIcon className="h-5 w-5 mr-1" aria-hidden="true" />
@@ -354,39 +388,58 @@ export default function ViewApplicationPage() {
                 </div>
               </div>
               <ConfirmationModal
+                confirmButtonText={
+                  isUpdateLoading ? "Confirming..." : "Confirm"
+                }
                 body={
                   <p className="text-sm text-grey-400">
                     {`You have ${reviewDecision?.toLowerCase()} a Grant Application. This will carry gas fees based on the selected network`}
                   </p>
                 }
-                confirmButtonAction={handleUpdateGrantApplication}
-                cancelButtonAction={handleCancelModal}
+                confirmButtonAction={handleReview}
+                cancelButtonAction={() => {
+                  setOpenModal(false);
+                  setTimeout(() => setReviewDecision(undefined), 500);
+                }}
                 isOpen={openModal}
                 setIsOpen={setOpenModal}
+              />
+
+              <ProgressModal
+                isOpen={openProgressModal}
+                subheading={
+                  "Please hold while we update the grant application."
+                }
+                steps={progressSteps}
+              />
+
+              <ErrorModal
+                isOpen={openErrorModal}
+                setIsOpen={setOpenErrorModal}
+                tryAgainFn={handleReview}
               />
             </header>
 
             <main>
               <h1 className="text-2xl mt-6">
-                {application?.project!.title || "..."}
+                {application?.project?.title || "..."}
               </h1>
               <div className="sm:flex sm:justify-between my-6">
                 <div className="sm:basis-3/4 sm:mr-3">
                   <div className="grid sm:grid-cols-3 gap-2 md:gap-10">
-                    <div className="text-grey-500 truncate block">
-                      <MailIcon className="inline-flex h-4 w-4 text-grey-500 mr-1" />
-                      <span className="text-xs text-grey-400">
-                        {getAnswer(ApplicationQuestions.EMAIL)}
-                      </span>
-                    </div>
                     <span
                       className="text-grey-500 flex flex-row justify-start items-center"
                       data-testid="twitter-info"
                     >
                       <TwitterIcon className="h-4 w-4 mr-2" />
-                      <span className="text-sm text-violet-400 mr-2">
-                        {getAnswer(ApplicationQuestions.TWITTER)}
-                      </span>
+                      <a
+                        href={`https://twitter.com/${application?.project?.projectTwitter}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-violet-400 mr-2"
+                      >
+                        {application?.project?.projectTwitter}
+                      </a>
                       {getVerifiableCredentialVerificationResultView("twitter")}
                     </span>
 
@@ -395,36 +448,77 @@ export default function ViewApplicationPage() {
                       data-testid="github-info"
                     >
                       <GithubIcon className="h-4 w-4 mr-2" />
-                      <span className="text-sm text-violet-400 mr-2">
-                        {getAnswer(ApplicationQuestions.GITHUB)}
-                      </span>
+                      <a
+                        href={`https://github.com/${registeredGithub}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-violet-400 mr-2"
+                      >
+                        {registeredGithub}
+                      </a>
                       {getVerifiableCredentialVerificationResultView("github")}
+                    </span>
+
+                    <span
+                      className="text-grey-500 flex flex-row justify-start items-center"
+                      data-testid="project-createdAt"
+                    >
+                      <CalendarIcon className="h-4 w-4 mr-2" />
+                      <span className="text-sm text-violet-400 mr-2">
+                        Created on:{" "}
+                        {application?.project?.createdAt
+                          ? formatDateWithOrdinal(
+                              new Date(Number(application?.project?.createdAt))
+                            )
+                          : "-"}
+                      </span>
                     </span>
                   </div>
 
                   <hr className="my-6" />
 
                   <h2 className="text-xs mb-2">Description</h2>
-                  <p className="text-base">
-                    {application?.project!.description}
-                  </p>
+
+                  <p
+                    dangerouslySetInnerHTML={{
+                      __html: renderToHTML(
+                        application?.project?.description.replace(
+                          /\n/g,
+                          "\n\n"
+                        ) ?? ""
+                      ),
+                    }}
+                    className="text-md prose prose-h1:text-lg prose-h2:text-base prose-h3:text-base prose-a:text-blue-600"
+                  ></p>
 
                   <hr className="my-6" />
 
-                  <h2 className="text-xs mb-2">Funding Sources</h2>
-                  <p className="text-base mb-6">
-                    {getAnswer(ApplicationQuestions.FUNDING_SOURCE)}
-                  </p>
+                  {answerBlocks &&
+                    answerBlocks?.map((block: AnswerBlock) => {
+                      const answerText = Array.isArray(block.answer)
+                        ? block.answer.join(", ")
+                        : block.answer ?? "";
 
-                  <h2 className="text-xs mb-2">Funding Profit</h2>
-                  <p className="text-base mb-6">
-                    {getAnswer(ApplicationQuestions.PROFIT_2022)}
-                  </p>
-
-                  <h2 className="text-xs mb-2">Team Size</h2>
-                  <p className="text-base mb-6">
-                    {getAnswer(ApplicationQuestions.TEAM_SIZE)}
-                  </p>
+                      return (
+                        <div key={block.questionId} className="pb-5">
+                          <h2 className="text-xs mb-2">{block.question}</h2>
+                          {block.type === "paragraph" ? (
+                            <p
+                              dangerouslySetInnerHTML={{
+                                __html: renderToHTML(
+                                  answerText.replace(/\n/g, "\n\n")
+                                ),
+                              }}
+                              className="text-md prose prose-h1:text-lg prose-h2:text-base prose-h3:text-base prose-a:text-blue-600"
+                            ></p>
+                          ) : (
+                            <p className="text-base text-black">
+                              {answerText.replace(/\n/g, "<br/>")}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
                 <div className="sm:basis-1/4 text-center sm:ml-3"></div>
               </div>
@@ -437,16 +531,6 @@ export default function ViewApplicationPage() {
   );
 }
 
-const getCredentialSubject = (
-  question: string,
-  application: GrantApplication | undefined
-) => {
-  return (
-    application?.answers!.find((answer) => answer.question === question)
-      ?.answer || "N/A"
-  );
-};
-
 function vcProviderMatchesProject(
   provider: string,
   verifiableCredential: VerifiableCredential,
@@ -455,17 +539,22 @@ function vcProviderMatchesProject(
   let vcProviderMatchesProject = false;
   if (provider === "twitter") {
     vcProviderMatchesProject =
-      verifiableCredential.credentialSubject.provider?.split("#")[1] ===
-      getCredentialSubject(ApplicationQuestions.TWITTER, application);
+      verifiableCredential.credentialSubject.provider
+        ?.split("#")[1]
+        .toLowerCase() === application?.project?.projectTwitter?.toLowerCase();
   } else if (provider === "github") {
     vcProviderMatchesProject =
-      verifiableCredential.credentialSubject.provider?.split("#")[1] ===
-      getCredentialSubject(
-        ApplicationQuestions.GITHUB_ORGANIZATION,
-        application
-      );
+      verifiableCredential.credentialSubject.provider
+        ?.split("#")[1]
+        .toLowerCase() === application?.project?.projectGithub?.toLowerCase();
   }
   return vcProviderMatchesProject;
+}
+
+function vcIssuedToAddress(vc: VerifiableCredential, address: string) {
+  const vcIdSplit = vc.credentialSubject.id.split(":");
+  const addressFromId = vcIdSplit[vcIdSplit.length - 1];
+  return addressFromId === address;
 }
 
 async function isVerified(
@@ -481,8 +570,35 @@ async function isVerified(
     verifiableCredential,
     application
   );
+  const vcIssuedToAtLeastOneProjectOwner = (
+    application?.project?.owners ?? []
+  ).some((owner) => vcIssuedToAddress(verifiableCredential, owner.address));
 
-  return vcHasValidProof && vcIssuedByValidIAMServer && providerMatchesProject
+  return vcHasValidProof &&
+    vcIssuedByValidIAMServer &&
+    providerMatchesProject &&
+    vcIssuedToAtLeastOneProjectOwner
     ? VerifiedCredentialState.VALID
     : VerifiedCredentialState.INVALID;
+}
+
+function redirectToViewRoundPage(
+  navigate: NavigateFunction,
+  waitSeconds: number,
+  id: string
+) {
+  setTimeout(() => {
+    navigate(`/round/${id}`);
+  }, waitSeconds);
+}
+
+function redirectToViewApplicationPage(
+  navigate: NavigateFunction,
+  waitSeconds: number,
+  id: string,
+  applicationId: string
+) {
+  setTimeout(() => {
+    navigate(`/round/${id}/application/${applicationId}`);
+  }, waitSeconds);
 }

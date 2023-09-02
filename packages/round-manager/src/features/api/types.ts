@@ -1,9 +1,13 @@
 /**
  * Supported EVM networks
  */
+import { Signer } from "@ethersproject/abstract-signer";
+import { Web3Provider } from "@ethersproject/providers";
 import { VerifiableCredential } from "@gitcoinco/passport-sdk-types";
+import { BigNumber } from "ethers";
+import { SchemaQuestion } from "./utils";
 
-export type Network = "goerli" | "optimism" | "optimism-kovan";
+export type Network = "goerli" | "optimism" | "fantom" | "pgn";
 
 export interface Web3Instance {
   /**
@@ -18,8 +22,12 @@ export interface Web3Instance {
     name: string;
     network: Network;
   };
-  provider: any;
-  signer?: any;
+  provider: Web3Provider;
+  signer?: Signer;
+}
+
+export enum StorageProtocolID {
+  IPFS = 1,
 }
 
 export interface MetadataPointer {
@@ -27,7 +35,7 @@ export interface MetadataPointer {
    * The decentralized storage protocol
    * Read more here: https://github.com/gitcoinco/grants-round/blob/main/packages/contracts/docs/MetaPtrProtocol.md
    */
-  protocol: number;
+  protocol: StorageProtocolID;
   /**
    * The identifier which represents the program metadata on a decentralized storage
    */
@@ -38,12 +46,14 @@ export interface IPFSObject {
   /**
    * File content to be saved in IPFS
    */
+  // eslint-disable-next-line @typescript-eslint/ban-types
   content: object | Blob;
   /**
    * Optional metadata
    */
   metadata?: {
     name?: string;
+    // eslint-disable-next-line @typescript-eslint/ban-types
     keyvalues?: object;
   };
 }
@@ -58,6 +68,10 @@ export interface Contract {
    * Contract ABI in Human Readable ABI format
    */
   abi: Array<string>;
+  /**
+   * Contract ABI in binary format
+   */
+  bytecode?: string;
 }
 
 export interface Program {
@@ -68,7 +82,7 @@ export interface Program {
   /**
    * Metadata of the Grant Program to be stored off-chain
    */
-  metadata?: {
+  metadata: {
     name: string;
   };
   /**
@@ -79,19 +93,47 @@ export interface Program {
    * Addresses of wallets that will have admin privileges to operate the Grant program
    */
   operatorWallets: Array<string>;
+  /**
+   * Network Chain Information
+   */
+  chain?: {
+    id: number;
+    name?: string;
+    logo?: string;
+  };
 }
 
-export interface ApplicationMetadata {
-  customQuestions?: {
-    email?: string;
-    twitter?: string;
-    website?: string;
-    github?: string;
-    githubOrganization?: string;
-    fundingSource?: string;
-    profit2022?: string;
-    teamSize?: string;
+export type InputType =
+  | "email"
+  | "address"
+  | "number"
+  | "text"
+  | "short-answer"
+  | "paragraph"
+  | "multiple-choice"
+  | "checkbox"
+  | "dropdown"
+  | "link";
+
+export type EditQuestion = {
+  index?: number;
+  field?: SchemaQuestion;
+};
+
+export type ProjectRequirements = {
+  twitter: {
+    required: boolean;
+    verification: boolean;
   };
+  github: {
+    required: boolean;
+    verification: boolean;
+  };
+};
+
+export interface ApplicationMetadata {
+  questions?: SchemaQuestion[];
+  requirements: ProjectRequirements;
 }
 
 export interface Round {
@@ -99,11 +141,32 @@ export interface Round {
    * The on-chain unique round ID
    */
   id?: string;
+
+  chainId?: number;
+
   /**
    * Metadata of the Round to be stored off-chain
    */
-  roundMetadata?: {
+  roundMetadata: {
     name: string;
+    programContractAddress: string;
+    roundType: string;
+    eligibility?: {
+      description: string;
+      requirements: { requirement: string }[];
+    };
+    quadraticFundingConfig: {
+      matchingFundsAvailable: number;
+      matchingCap: boolean;
+      matchingCapAmount?: number;
+      minDonationThreshold?: boolean;
+      minDonationThresholdAmount?: number;
+      sybilDefense?: boolean;
+    };
+    support?: {
+      type: string;
+      info: string;
+    };
   };
   /**
    * Pointer to round metadata in a decentralized storage e.g IPFS, Ceramic etc.
@@ -121,6 +184,13 @@ export interface Round {
    * Voting contract address
    */
   votingStrategy: string;
+  /**
+   * Payout contract address
+   */
+  payoutStrategy: {
+    id: string;
+    isReadyForPayout: boolean;
+  };
   /**
    * Unix timestamp of the start of the round
    */
@@ -149,20 +219,83 @@ export interface Round {
    * Addresses of wallets that will have admin privileges to operate the Grant program
    */
   operatorWallets?: Array<string>;
+  /**
+   * List of projects approved for the round
+   */
+  approvedProjects?: ApprovedProject[];
+  /**
+   * Round fees percentage
+   */
+  feesPercentage?: number;
+  /**
+   * Round fees address
+   */
+  feesAddress?: string;
+
+  finalized: boolean;
+  protocolFeePercentage?: number;
+  roundFeePercentage?: number;
 }
+
+export type MatchingStatsData = {
+  index?: number;
+  projectName: string;
+  uniqueContributorsCount?: number;
+  contributionsCount: number;
+  matchPoolPercentage: number;
+  projectId: string;
+  applicationId: string;
+  matchAmountInToken: BigNumber;
+  originalMatchAmountInToken: BigNumber;
+  projectPayoutAddress: string;
+  status?: string;
+  hash?: string;
+};
 
 export type ProjectStatus =
   | "PENDING"
   | "APPROVED"
   | "REJECTED"
+  | "CANCELLED"
   | "APPEAL"
   | "FRAUD";
 
 export type ProjectCredentials = {
   [key: string]: VerifiableCredential;
 };
+interface ProjectOwner {
+  address: string;
+}
 
+export type ApprovedProject = {
+  grantApplicationId: GrantApplicationId;
+  projectRegistryId: ProjectRegistryId;
+  recipient: recipient;
+  projectMetadata: ProjectMetadata;
+  status: ApplicationStatus;
+};
 export type GrantApplicationId = string;
+export type ProjectRegistryId = string;
+export type recipient = string;
+
+export type ProjectMetadata = {
+  title: string;
+  description: string;
+  website: string;
+  bannerImg?: string;
+  logoImg?: string;
+  projectTwitter?: string;
+  userGithub?: string;
+  projectGithub?: string;
+  credentials?: ProjectCredentials;
+  owners: ProjectOwner[];
+};
+
+export type RoundProject = {
+  id: string;
+  status: ApplicationStatus;
+  payoutAddress: string;
+};
 
 export interface GrantApplication {
   /**
@@ -180,17 +313,7 @@ export interface GrantApplication {
   /**
    * Project information
    */
-  project?: {
-    lastUpdated: number; // unix timestamp in milliseconds
-    id: string;
-    title: string;
-    description: string;
-    website: string;
-    bannerImg?: string;
-    logoImg: string;
-    credentials: ProjectCredentials;
-    metaPtr: MetadataPointer;
-  };
+  project?: Project;
   /** List of answers to questions */
   answers?: Array<AnswerBlock>;
   /**
@@ -198,15 +321,89 @@ export interface GrantApplication {
    * e.g IPFS, Ceramic etc.
    */
   projectsMetaPtr: MetadataPointer;
+  /**
+   * Status of each grant application
+   */
   status?: ProjectStatus;
+  /**
+   * Index of a grant application
+   */
+  applicationIndex?: number;
+  /**
+   * Created timestamp of a grant application
+   */
+  createdAt: string;
 }
 
 export type AnswerBlock = {
   questionId: number;
   question: string;
   answer?: string;
+  type?: string;
   encryptedAnswer?: {
     ciphertext: string;
     encryptedSymmetricKey: string;
   };
+};
+
+export enum ProgressStatus {
+  IS_SUCCESS = "IS_SUCCESS",
+  IN_PROGRESS = "IN_PROGRESS",
+  NOT_STARTED = "NOT_STARTED",
+  IS_ERROR = "IS_ERROR",
+}
+
+// TODO - what is the difference between ApplicationStatus and ProjectStatus (L155)
+export enum ApplicationStatus {
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  CANCELLED = "CANCELLED",
+}
+
+export type Status = {
+  index: number;
+  status: number;
+};
+
+export type AppStatus = {
+  index: number;
+  statusRow: string;
+};
+
+export type ProgressStep = {
+  name: string;
+  description: string;
+  status: ProgressStatus;
+};
+
+export type Project = {
+  lastUpdated: number; // unix timestamp in milliseconds
+  createdAt: number; // unix timestamp in miliseconds
+  id: string;
+  owners: ProjectOwner[];
+  title: string;
+  description: string;
+  website: string;
+  bannerImg?: string;
+  logoImg?: string;
+  projectGithub?: string;
+  userGithub?: string;
+  projectTwitter?: string;
+  credentials: ProjectCredentials;
+  metaPtr: MetadataPointer;
+};
+
+export type TransactionBlock = {
+  transactionBlockNumber: number;
+  error?: unknown;
+};
+
+export type EditedGroups = {
+  ApplicationMetaPointer: boolean;
+  MatchAmount: boolean;
+  RoundFeeAddress: boolean;
+  RoundFeePercentage: boolean;
+  RoundMetaPointer: boolean;
+  StartAndEndTimes: boolean;
 };

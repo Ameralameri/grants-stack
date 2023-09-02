@@ -1,33 +1,52 @@
+import "./browserPatches";
+
+import { ReduxRouter } from "@lagunovsky/redux-react-router";
+import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { Provider } from "react-redux";
-import { ReduxRouter } from "@lagunovsky/redux-react-router";
 import { Route, Routes } from "react-router-dom";
 import { WagmiConfig } from "wagmi";
-import { RainbowKitProvider } from "@rainbow-me/rainbowkit";
 import { initDatadog } from "./datadog";
+import { initTagmanager } from "./tagmanager";
 
 import { store } from "./app/store";
 import { chains, client as WagmiClient } from "./app/wagmi";
-import reportWebVitals from "./reportWebVitals";
 import history from "./history";
+import reportWebVitals from "./reportWebVitals";
 
 import "./index.css";
 
 // Routes
-import CreateProgram from "./features/program/CreateProgramPage";
-import CreateRound from "./features/round/CreateRoundPage";
-import Program from "./features/program/ListProgramPage";
-import Auth from "./features/common/Auth";
-import ViewProgram from "./features/program/ViewProgramPage";
-import ViewRoundPage from "./features/round/ViewRoundPage";
-import ViewApplication from "./features/round/ViewApplicationPage";
-import NotFound from "./features/common/NotFoundPage";
+import { ApplicationProvider } from "./context/application/ApplicationContext";
+import { BulkUpdateGrantApplicationProvider } from "./context/application/BulkUpdateGrantApplicationContext";
+import { CreateProgramProvider } from "./context/program/CreateProgramContext";
+import { ReadProgramProvider } from "./context/program/ReadProgramContext";
+import { CreateRoundProvider } from "./context/round/CreateRoundContext";
+import { FinalizeRoundProvider } from "./context/round/FinalizeRoundContext";
+import { FundContractProvider } from "./context/round/FundContractContext";
+import { ReclaimFundsProvider } from "./context/round/ReclaimFundsContext";
+import { RoundProvider } from "./context/round/RoundContext";
 import AccessDenied from "./features/common/AccessDenied";
-import { ProgramProvider } from "./context/ProgramContext";
+import Auth from "./features/common/Auth";
+import NotFound from "./features/common/NotFoundPage";
+import CreateProgram from "./features/program/CreateProgramPage";
+import Program from "./features/program/ListProgramPage";
+import ViewProgram from "./features/program/ViewProgramPage";
+import CreateRound from "./features/round/CreateRoundPage";
+import ViewApplication from "./features/round/ViewApplicationPage";
+import ViewRoundPage from "./features/round/ViewRoundPage";
+import { initSentry } from "./sentry";
+import { UpdateRoundProvider } from "./context/round/UpdateRoundContext";
+
+// Initialize sentry
+initSentry();
 
 // Initialize datadog
 initDatadog();
+
+// Initialize tagmanager
+initTagmanager();
 
 const root = ReactDOM.createRoot(
   document.getElementById("root") as HTMLElement
@@ -37,7 +56,7 @@ root.render(
   <React.StrictMode>
     <Provider store={store}>
       <WagmiConfig client={WagmiClient}>
-        <RainbowKitProvider chains={chains}>
+        <RainbowKitProvider coolMode chains={chains}>
           <ReduxRouter history={history} store={store}>
             <Routes>
               {/* Protected Routes */}
@@ -46,9 +65,9 @@ root.render(
                 <Route
                   path="/"
                   element={
-                    <ProgramProvider>
+                    <ReadProgramProvider>
                       <Program />
-                    </ProgramProvider>
+                    </ReadProgramProvider>
                   }
                 />
 
@@ -56,25 +75,63 @@ root.render(
                 <Route
                   path="/round/create"
                   element={
-                    <ProgramProvider>
-                      <CreateRound />
-                    </ProgramProvider>
+                    <ReadProgramProvider>
+                      <CreateRoundProvider>
+                        <CreateRound />
+                      </CreateRoundProvider>
+                    </ReadProgramProvider>
                   }
                 />
-                <Route path="/round/:id" element={<ViewRoundPage />} />
+                <Route
+                  path="/round/:id"
+                  element={
+                    <RoundProvider>
+                      <ApplicationProvider>
+                        <BulkUpdateGrantApplicationProvider>
+                          <FinalizeRoundProvider>
+                            <FundContractProvider>
+                              <ReclaimFundsProvider>
+                                <UpdateRoundProvider>
+                                  <ViewRoundPage />
+                                </UpdateRoundProvider>
+                              </ReclaimFundsProvider>
+                            </FundContractProvider>
+                          </FinalizeRoundProvider>
+                        </BulkUpdateGrantApplicationProvider>
+                      </ApplicationProvider>
+                    </RoundProvider>
+                  }
+                />
                 <Route
                   path="/round/:roundId/application/:id"
-                  element={<ViewApplication />}
+                  element={
+                    <RoundProvider>
+                      <ApplicationProvider>
+                        <BulkUpdateGrantApplicationProvider>
+                          <ViewApplication />
+                        </BulkUpdateGrantApplicationProvider>
+                      </ApplicationProvider>
+                    </RoundProvider>
+                  }
                 />
 
                 {/* Program Routes */}
-                <Route path="/program/create" element={<CreateProgram />} />
+                <Route
+                  path="/program/create"
+                  element={
+                    <CreateProgramProvider>
+                      <CreateProgram />
+                    </CreateProgramProvider>
+                  }
+                />
                 <Route
                   path="/program/:id"
                   element={
-                    <ProgramProvider>
-                      <ViewProgram />
-                    </ProgramProvider>
+                    <RoundProvider>
+                      <ReadProgramProvider>
+                        <ViewProgram />
+                      </ReadProgramProvider>
+                    </RoundProvider>
                   }
                 />
 

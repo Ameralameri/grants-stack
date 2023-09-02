@@ -1,14 +1,30 @@
-import { useNavigate, useSearchParams } from "react-router-dom";
-import "react-datetime/css/react-datetime.css";
-import { XIcon } from "@heroicons/react/solid";
-import { FormWizard } from "../common/FormWizard";
-import { RoundDetailForm } from "./RoundDetailForm";
-import { RoundApplicationForm } from "./RoundApplicationForm";
-import { Button } from "../common/styles";
-import Navbar from "../common/Navbar";
-import Footer from "../common/Footer";
 import { datadogLogs } from "@datadog/browser-logs";
-import { useProgramById } from "../../context/ProgramContext";
+import { XIcon } from "@heroicons/react/solid";
+import { Button } from "common/src/styles";
+import "react-datetime/css/react-datetime.css";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useProgramById } from "../../context/program/ReadProgramContext";
+import Footer from "common/src/components/Footer";
+import { FormWizard } from "../common/FormWizard";
+import Navbar from "../common/Navbar";
+import ApplicationEligibilityForm from "./ApplicationEligibilityForm";
+import { RoundApplicationForm } from "./RoundApplicationForm";
+import { RoundDetailForm } from "./RoundDetailForm";
+import QuadraticFundingForm from "./QuadraticFundingForm";
+
+function ExitCreateRound(props: { onClick: () => void }) {
+  return (
+    <Button
+      type="button"
+      $variant="outline"
+      className="inline-flex float-right py-2 px-4 text-sm text-pink-500"
+      onClick={props.onClick}
+    >
+      <XIcon className="h-5 w-5 mr-1" aria-hidden="true" />
+      Exit
+    </Button>
+  );
+}
 
 export default function CreateRound() {
   datadogLogs.logger.info("====> Route: /round/create");
@@ -29,20 +45,18 @@ export default function CreateRound() {
           <header>
             <div className="flow-root">
               <h1 className="float-left text-[32px] mb-7">Create a Round</h1>
-              <Button
-                type="button"
-                $variant="outline"
-                className="inline-flex float-right py-2 px-4 text-sm text-pink-500"
-                onClick={() => navigate("/")}
-              >
-                <XIcon className="h-5 w-5 mr-1" aria-hidden="true" />
-                Exit
-              </Button>
+              <ExitCreateRound onClick={() => navigate("/")} />
             </div>
           </header>
           <main>
             <FormWizard
-              steps={[RoundDetailForm, RoundApplicationForm]}
+              steps={[
+                RoundDetailForm,
+                QuadraticFundingForm,
+                ApplicationEligibilityForm,
+                // @ts-expect-error Needs refactoring/typing as a whole
+                RoundApplicationForm,
+              ]}
               initialData={{ program }}
             />
           </main>

@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import Navbar from "./Navbar";
-import Footer from "./Footer";
-import { Button } from "../common/styles";
+import Footer from "common/src/components/Footer";
+import { Button } from "common/src/styles";
 import { ReactComponent as NotFoundBanner } from "../../assets/404.svg";
 import { datadogLogs } from "@datadog/browser-logs";
 
@@ -21,12 +21,15 @@ export default function NotFoundPage() {
             <p className="text-grey-400 mb-0">
               It looks like the page you’re looking for doesn’t exist.
             </p>
+            <p className="text-grey-400 mt-1">
+              Check if you're connected to the right network
+            </p>
             <p className="text-grey-400 mt-1 mb-5">
               For support, contact us on{" "}
               <a href="https://discord.com/invite/gitcoin">Discord.</a>
             </p>
 
-            <Link to="/">
+            <Link to="/" data-testid={"not-found-go-back-home"}>
               <Button
                 $variant="outline"
                 type="button"

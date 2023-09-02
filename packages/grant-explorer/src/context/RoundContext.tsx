@@ -1,4 +1,10 @@
-import { createContext, useContext, useEffect, useReducer } from "react";
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useReducer,
+} from "react";
 import { getRoundById } from "../features/api/round";
 import { Round } from "../features/api/types";
 
@@ -7,6 +13,7 @@ export interface RoundState {
   isLoading: boolean;
   listRoundsError?: Error;
   getRoundByIdError?: Error;
+  currentRoundId?: string;
 }
 
 enum ActionType {
@@ -16,10 +23,12 @@ enum ActionType {
   SET_ERROR_LIST_ROUNDS = "SET_ERROR_LIST_ROUNDS",
   ADD_ROUND = "ADD_ROUND",
   SET_ERROR_GET_ROUND = "SET_ERROR_GET_ROUND",
+  SET_ROUND_ID = "SET_ROUND_ID",
 }
 
 interface Action {
   type: ActionType;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   payload?: any;
 }
 
@@ -27,7 +36,7 @@ type Dispatch = (action: Action) => void;
 
 export const initialRoundState: RoundState = {
   rounds: [],
-  isLoading: false,
+  isLoading: true,
 };
 
 export const RoundContext = createContext<
@@ -56,22 +65,17 @@ const roundReducer = (state: RoundState, action: Action) => {
       };
     case ActionType.SET_ERROR_GET_ROUND:
       return { ...state, getRoundByIdError: action.payload };
+    case ActionType.SET_ROUND_ID:
+      return { ...state, currentRoundId: action.payload };
     default:
       return state;
   }
 };
 
-export const RoundProvider = ({
-  children,
-}: {
-  children: React.ReactNode;
-}) => {
+export const RoundProvider = ({ children }: { children: ReactNode }) => {
   const [state, dispatch] = useReducer(roundReducer, initialRoundState);
 
-  const providerProps = {
-    state,
-    dispatch,
-  };
+  const providerProps = { state, dispatch };
 
   return (
     <RoundContext.Provider value={providerProps}>
@@ -80,20 +84,15 @@ export const RoundProvider = ({
   );
 };
 
-
 function fetchRoundsById(dispatch: Dispatch, chainId: string, roundId: string) {
   dispatch({ type: ActionType.SET_LOADING, payload: true });
 
   getRoundById(roundId, chainId)
-    .then((round) =>
-      dispatch({ type: ActionType.ADD_ROUND, payload: round })
-    )
+    .then((round) => dispatch({ type: ActionType.ADD_ROUND, payload: round }))
     .catch((error) =>
       dispatch({ type: ActionType.SET_ERROR_GET_ROUND, payload: error })
     )
-    .finally(() =>
-      dispatch({ type: ActionType.FINISH_LOADING })
-    );
+    .finally(() => dispatch({ type: ActionType.FINISH_LOADING }));
 }
 
 export const useRoundById = (
@@ -103,27 +102,30 @@ export const useRoundById = (
   round?: Round;
   isLoading: boolean;
   getRoundByIdError?: Error;
-} => {  
+} => {
   const context = useContext(RoundContext);
   if (context === undefined) {
     throw new Error("useRoundById must be used within a RoundProvider");
   }
 
   useEffect(() => {
+    context.dispatch({ type: ActionType.SET_ROUND_ID, payload: roundId });
     if (roundId) {
       const existingRound = context.state.rounds.find(
         (round) => round.id === roundId
       );
 
-      if (!existingRound) {
+      if (!existingRound?.token) {
         fetchRoundsById(context.dispatch, chainId, roundId);
       }
     }
   }, [chainId, roundId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const round = context.state.rounds.find((round) => round.id === roundId);
+
   return {
-    round: context.state.rounds.find((round) => round.id === roundId),
+    round: round,
     isLoading: context.state.isLoading,
     getRoundByIdError: context.state.getRoundByIdError,
   };
-}
+};

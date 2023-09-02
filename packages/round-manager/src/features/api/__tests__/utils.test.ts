@@ -1,15 +1,15 @@
 import { enableFetchMocks, FetchMock } from "jest-fetch-mock";
 
-import {
-  ChainId,
-  checkGrantApplicationStatus,
-  fetchFromIPFS,
-  generateApplicationSchema,
-  graphql_fetch,
-  pinToIPFS,
-} from "../utils";
+import { fetchFromIPFS, generateApplicationSchema, pinToIPFS } from "../utils";
+import { ChainId } from "common";
 
+import {
+  initialQuestions,
+  initialRequirements,
+} from "../../round/RoundApplicationForm";
+import { checkGrantApplicationStatus } from "../application";
 import { MetadataPointer } from "../types";
+import { graphql_fetch } from "common";
 
 enableFetchMocks();
 
@@ -333,21 +333,6 @@ describe("graphql_fetch", () => {
     );
   });
 
-  it("should fetch data from the correct graphql endpoint for optimism-kovan network", async () => {
-    fetchMock.mockResponseOnce(
-      JSON.stringify({
-        data: {},
-      })
-    );
-
-    await graphql_fetch(`programs { id }`, ChainId.OPTIMISM_KOVAN_CHAIN_ID);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      `${process.env.REACT_APP_SUBGRAPH_OPTIMISM_KOVAN_API}`,
-      expect.anything()
-    );
-  });
-
   it("should fetch data from the correct graphql endpoint for optimism network", async () => {
     fetchMock.mockResponseOnce(
       JSON.stringify({
@@ -366,77 +351,34 @@ describe("graphql_fetch", () => {
 
 describe("generateApplicationSchema", () => {
   it("should return valid application schema", () => {
-    const metadata = {
-      customQuestions: {
-        email: "",
-        twitter: "",
-        fundingSource: "What platforms have you raised funds from?",
+    const expectedSchema = {
+      questions: initialQuestions.map((question) => ({
+        title: question.title,
+        type: question.type,
+        required: question.required,
+        hidden: question.hidden,
+        info: "", // TODO: is grant hub using this???
+        choices: undefined, // TODO: is grant hub using this???
+        encrypted: question.encrypted,
+      })),
+      requirements: {
+        twitter: {
+          required: false,
+          verification: false,
+        },
+        github: {
+          required: false,
+          verification: false,
+        },
       },
     };
 
-    const schema = generateApplicationSchema(metadata);
-
-    expect(Array.isArray(schema)).toBe(true);
-    expect(schema).toContainEqual({
-      id: 2,
-      question: "Funding Source",
-      type: "TEXT",
-      required: true,
-      info: "What platforms have you raised funds from?",
-      choices: [],
-      encrypted: false,
-    });
-  });
-
-  it("should return valid application schema when one of the subkeys is not an object", () => {
-    const metadata = {
-      customQuestions: {
-        email: "",
-        twitter: "",
-        fundingSource: "What platforms have you raised funds from?",
-      },
-      ofac: "Is you project OFAC compliant?",
-    };
-
-    const schema = generateApplicationSchema(metadata);
-
-    expect(Array.isArray(schema)).toBe(true);
-    expect(schema).toContainEqual({
-      id: 2,
-      question: "Funding Source",
-      type: "TEXT",
-      required: true,
-      info: "What platforms have you raised funds from?",
-      choices: [],
-      encrypted: false,
-    });
-    expect(schema).toContainEqual({
-      id: 3,
-      question: "Ofac",
-      type: "TEXT",
-      required: true,
-      info: "Is you project OFAC compliant?",
-      choices: [],
-      encrypted: false,
-    });
-  });
-
-  it("should mark email field as encrypted", () => {
-    const metadata = {
-      customQuestions: {
-        email: "",
-      },
-    };
-
-    const schema = generateApplicationSchema(metadata);
-
-    expect(schema).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          question: "Email",
-          encrypted: true,
-        }),
-      ])
+    const schema = generateApplicationSchema(
+      initialQuestions,
+      initialRequirements
     );
+
+    expect(Array.isArray(schema.questions)).toBe(true);
+    expect(schema).toMatchObject(expectedSchema);
   });
 });

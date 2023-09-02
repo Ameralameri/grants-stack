@@ -1,13 +1,7 @@
-import React, { Fragment } from "react";
+import { Fragment, ReactNode } from "react";
 import { Dialog, Transition } from "@headlessui/react";
 import { CheckIcon, XIcon } from "@heroicons/react/solid";
-
-export enum ProgressStatus {
-  COMPLETE = "complete",
-  CURRENT = "current",
-  UPCOMING = "upcoming",
-  ERROR = "error",
-}
+import { ProgressStatus } from "../api/types";
 
 export type Step = {
   name: string;
@@ -17,18 +11,18 @@ export type Step = {
 
 interface ProgressModalProps {
   isOpen: boolean;
-  setIsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   steps: Step[];
   heading?: string;
   subheading?: string;
   redirectUrl?: string;
+  children?: ReactNode;
 }
 
 export default function ProgressModal({
   isOpen,
-  setIsOpen,
   heading = "Processing...",
   subheading = "Please hold while your operation is in progress.",
+  children,
   ...props
 }: ProgressModalProps) {
   return (
@@ -37,7 +31,9 @@ export default function ProgressModal({
         as="div"
         data-testid="progress-modal"
         className="relative z-10"
-        onClose={setIsOpen}
+        onClose={() => {
+          /* Don't close the dialog when clicking the backdrop */
+        }}
       >
         <Transition.Child
           as={Fragment}
@@ -80,12 +76,12 @@ export default function ProgressModal({
                   <ol className="overflow-hidden">
                     {props.steps.map((step, stepIdx) => (
                       <li
-                        key={step.name}
+                        key={stepIdx}
                         className={`relative ${
                           stepIdx !== props.steps.length - 1 && "pb-10"
                         }`}
                       >
-                        {step.status === ProgressStatus.COMPLETE ? (
+                        {step.status === ProgressStatus.IS_SUCCESS ? (
                           <ModalStep
                             step={step}
                             icon={
@@ -109,13 +105,13 @@ export default function ProgressModal({
                             descriptionColor={"text-grey-500"}
                             isLastStep={stepIdx === props.steps.length - 1}
                           />
-                        ) : step.status === ProgressStatus.CURRENT ? (
+                        ) : step.status === ProgressStatus.IN_PROGRESS ? (
                           <ModalStep
                             step={step}
                             icon={
                               <span className="relative z-10 w-8 h-8 flex items-center justify-center bg-white border-2 border-violet-500 rounded-full">
                                 <span
-                                  className="h-2.5 w-2.5 bg-violet-500 rounded-full"
+                                  className="h-2.5 w-2.5 bg-violet-500 rounded-full animate-pulse-scale"
                                   data-testid={`${step.name}-current-icon`}
                                 />
                               </span>
@@ -129,7 +125,7 @@ export default function ProgressModal({
                             nameColor="text-violet-500"
                             isLastStep={stepIdx === props.steps.length - 1}
                           />
-                        ) : step.status === ProgressStatus.ERROR ? (
+                        ) : step.status === ProgressStatus.IS_ERROR ? (
                           <ModalStep
                             step={step}
                             icon={
@@ -149,7 +145,7 @@ export default function ProgressModal({
                             isLastStep={stepIdx === props.steps.length - 1}
                             nameColor="text-grey-500"
                           />
-                        ) : step.status === ProgressStatus.UPCOMING ? (
+                        ) : step.status === ProgressStatus.NOT_STARTED ? (
                           <ModalStep
                             step={step}
                             icon={
@@ -180,6 +176,7 @@ export default function ProgressModal({
         </div>
         {/* Adding invisible button as modal needs to be displayed with a button */}
         <button className="h-0 w-0 overflow-hidden" />
+        {children}
       </Dialog>
     </Transition.Root>
   );

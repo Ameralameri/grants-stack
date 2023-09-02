@@ -1,6 +1,8 @@
 import { GrantApplication, ProjectStatus } from "../api/types";
-import { Button } from "../common/styles";
+import { Button } from "common/src/styles";
 import { CheckIcon, XIcon } from "@heroicons/react/solid";
+import DefaultBannerImage from "../../assets/default_banner.png";
+import DefaultLogoImage from "../../assets/default_logo.png";
 
 export function NumberOfStatus(props: {
   grantApplications: GrantApplication[];
@@ -22,17 +24,25 @@ export function NumberOfStatus(props: {
   );
 }
 
-export function ApplicationLogo(props: { application: any }) {
+export function ApplicationLogo(props: {
+  application: GrantApplication;
+  classNameOverride?: string;
+}) {
+  const applicationLogoImage = props.application.project?.logoImg
+    ? `https://${process.env.REACT_APP_PINATA_GATEWAY}/ipfs/${props.application.project.logoImg}`
+    : DefaultLogoImage;
+
   return (
     <div className="pl-4">
       <div className="-mt-6 sm:-mt-6 sm:flex sm:items-end sm:space-x-5">
         <div className="flex">
           <img
-            className="h-12 w-12 rounded-full ring-4 ring-white bg-white"
-            src={`https://${process.env.REACT_APP_PINATA_GATEWAY}/ipfs/${
-              props.application.project!.logoImg
-            }`}
-            alt=""
+            className={
+              props.classNameOverride ??
+              "h-12 w-12 rounded-full ring-4 ring-white bg-white"
+            }
+            src={applicationLogoImage}
+            alt="Application Logo"
           />
         </div>
       </div>
@@ -40,15 +50,22 @@ export function ApplicationLogo(props: { application: any }) {
   );
 }
 
-export function ApplicationBanner(props: { application: any }) {
+export function ApplicationBanner(props: {
+  application: GrantApplication;
+  classNameOverride?: string;
+}) {
+  const applicationBannerImage = props.application.project?.bannerImg
+    ? `https://${process.env.REACT_APP_PINATA_GATEWAY}/ipfs/${props.application.project.bannerImg}`
+    : DefaultBannerImage;
+
   return (
     <div>
       <img
-        className="h-[120px] w-full object-cover rounded-t"
-        src={`https://${process.env.REACT_APP_PINATA_GATEWAY}/ipfs/${
-          props.application.project!.bannerImg
-        }`}
-        alt=""
+        className={
+          props.classNameOverride ?? "h-[120px] w-full object-cover rounded-t"
+        }
+        src={applicationBannerImage}
+        alt="Application Banner"
       />
     </div>
   );
@@ -67,6 +84,7 @@ function MarkForRejection(props: {
     | "PENDING"
     | "APPROVED"
     | "REJECTED"
+    | "CANCELLED"
     | "APPEAL"
     | "FRAUD"
     | undefined;
@@ -76,7 +94,7 @@ function MarkForRejection(props: {
     <Button
       type="button"
       $variant="solid"
-      className={`border border-grey-400 w-9 h-8 p-2.5 ${
+      className={`border border-grey-400 w-10 h-10 p-2.5 px-3.5 py-2 ${
         props.checkSelection === "REJECTED"
           ? "bg-white text-pink-500"
           : "bg-grey-500 text-white"
@@ -90,14 +108,20 @@ function MarkForRejection(props: {
 }
 
 function MarkForApproval(props: {
-  applicationStatus?: "PENDING" | "APPROVED" | "REJECTED" | "APPEAL" | "FRAUD";
+  applicationStatus?:
+    | "PENDING"
+    | "APPROVED"
+    | "REJECTED"
+    | "CANCELLED"
+    | "APPEAL"
+    | "FRAUD";
   onClick: () => void;
 }) {
   return (
     <Button
       type="button"
       $variant="solid"
-      className={`border border-grey-400 w-9 h-8 p-2.5 ${
+      className={`border border-grey-400 w-10 h-10 p-2.5 px-3.5 py-2 ${
         props.applicationStatus === "APPROVED"
           ? "bg-teal-400 text-grey-500"
           : "bg-grey-500 text-white"
@@ -116,12 +140,13 @@ export function ApplicationHeader(props: {
     | "PENDING"
     | "APPROVED"
     | "REJECTED"
+    | "CANCELLED"
     | "APPEAL"
     | "FRAUD"
     | undefined;
   approveOnClick?: () => void;
   rejectOnClick?: () => void;
-  application: any;
+  application: GrantApplication;
 }) {
   return (
     <div className="relative">
@@ -157,7 +182,7 @@ export function Cancel(props: { onClick: () => void }) {
     <Button
       type="button"
       $variant="outline"
-      className="text-xs text-pink-500"
+      className="text-xs text-pink-500 px-3.5 py-2"
       onClick={props.onClick}
     >
       Cancel
@@ -170,7 +195,7 @@ export function Select(props: { onClick: () => void }) {
     <Button
       type="button"
       $variant="outline"
-      className="text-xs bg-grey-150 border-none"
+      className="text-xs bg-grey-150 border-none px-3.5 py-2"
       onClick={props.onClick}
       data-testid="select"
     >
@@ -200,8 +225,9 @@ export function Continue(props: {
         <Button
           type="button"
           $variant="solid"
-          className="text-sm px-5"
+          className="text-sm px-3.5 py-2"
           onClick={props.onClick}
+          data-testid="continue-button"
         >
           Continue
         </Button>

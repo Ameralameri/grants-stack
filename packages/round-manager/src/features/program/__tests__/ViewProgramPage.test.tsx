@@ -1,22 +1,22 @@
 import ViewProgram from "../ViewProgramPage";
-import { screen } from "@testing-library/react";
-import { useListRoundsQuery } from "../../api/services/round";
+import { render, screen } from "@testing-library/react";
 import { useWallet } from "../../common/Auth";
 import {
   makeProgramData,
   makeRoundData,
-  renderWithContext,
+  wrapWithReadProgramContext,
+  wrapWithRoundContext,
 } from "../../../test-utils";
 import { faker } from "@faker-js/faker";
-import { Program, Round } from "../../api/types";
+import { Program, ProgressStatus } from "../../api/types";
+import { formatUTCDateAsISOString } from "common";
 
 const programId = faker.datatype.number().toString();
 const useParamsFn = () => ({ id: programId });
 
 jest.mock("../../common/Navbar");
 jest.mock("../../common/Auth");
-jest.mock("../../api/services/program");
-jest.mock("../../api/services/round");
+jest.mock("../../api/program");
 jest.mock("@rainbow-me/rainbowkit", () => ({
   ConnectButton: jest.fn(),
 }));
@@ -38,32 +38,59 @@ describe("<ViewProgram />", () => {
       address: stubProgram.operatorWallets[0],
       provider: { getNetwork: () => ({ chainId: "0x0" }) },
     });
-    (useListRoundsQuery as jest.Mock).mockReturnValue({
-      data: [],
-      isLoading: false,
-      isSuccess: true,
-    });
   });
 
-  it("should display 404 when no program is found", () => {
-    renderWithContext(<ViewProgram />, { programs: [], isLoading: false });
+  it("should display NotFoundPage when no program is found", () => {
+    render(
+      wrapWithReadProgramContext(wrapWithRoundContext(<ViewProgram />), {
+        programs: [],
+        fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+      })
+    );
+
     expect(screen.getByText("404 ERROR")).toBeInTheDocument();
   });
 
   it("should display access denied when wallet accessing is not program operator", () => {
-    (useWallet as jest.Mock).mockReturnValue({ chain: {} });
+    (useWallet as jest.Mock).mockReturnValue({
+      chain: {},
+      address: faker.finance.ethereumAddress(),
+      provider: { getNetwork: () => ({ chainId: "0x0" }) },
+    });
 
-    renderWithContext(<ViewProgram />, { programs: [stubProgram] });
+    render(
+      wrapWithReadProgramContext(
+        wrapWithRoundContext(<ViewProgram />, {
+          data: [],
+          fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+        }),
+        {
+          programs: [stubProgram],
+          fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+        }
+      )
+    );
     expect(screen.getByText("Access Denied!")).toBeInTheDocument();
   });
 
   it("displays the program name", async () => {
-    renderWithContext(<ViewProgram />, { programs: [stubProgram] });
+    render(
+      wrapWithReadProgramContext(
+        wrapWithRoundContext(<ViewProgram />, {
+          data: [],
+          fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+        }),
+        {
+          programs: [stubProgram],
+          fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+        }
+      )
+    );
 
-    await screen.findByText(stubProgram.metadata!.name);
+    await screen.findByText(stubProgram.metadata.name);
   });
 
-  it("displays a list of operator wallets", async () => {
+  it("displays a list of operator wallets for a program", async () => {
     const operatorWallets = [
       faker.finance.ethereumAddress(),
       faker.finance.ethereumAddress(),
@@ -74,113 +101,166 @@ describe("<ViewProgram />", () => {
     (useWallet as jest.Mock).mockReturnValue({
       chain: {},
       address: stubProgram.operatorWallets[0],
+      provider: { getNetwork: () => ({ chainId: "0x0" }) },
     });
 
-    renderWithContext(<ViewProgram />, { programs: [stubProgram] });
+    render(
+      wrapWithReadProgramContext(
+        wrapWithRoundContext(<ViewProgram />, {
+          data: [],
+          fetchRoundStatus: ProgressStatus.NOT_STARTED,
+        }),
+        {
+          programs: [stubProgram],
+          fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+        }
+      )
+    );
 
     const wallets = await screen.findAllByTestId("program-operator-wallet");
     expect(wallets.length).toEqual(operatorWallets.length);
   });
 
-  it("displays a loading spinner if loading", () => {
-    renderWithContext(<ViewProgram />, { isLoading: true });
+  it("displays a loading spinner if loading program", () => {
+    render(
+      wrapWithReadProgramContext(
+        wrapWithRoundContext(<ViewProgram />, {
+          data: [],
+          fetchRoundStatus: ProgressStatus.NOT_STARTED,
+        }),
+        { fetchProgramsStatus: ProgressStatus.IN_PROGRESS }
+      )
+    );
 
     screen.getByTestId("loading-spinner");
   });
 
   describe("when there are no rounds in the program", () => {
-    beforeEach(() => {
-      (useListRoundsQuery as jest.Mock).mockReturnValue({
-        data: [],
-        isLoading: false,
-        isSuccess: true,
-      });
-    });
-
     it("displays introductory text on the page", async () => {
-      renderWithContext(<ViewProgram />, { programs: [stubProgram] });
+      render(
+        wrapWithReadProgramContext(
+          wrapWithRoundContext(<ViewProgram />, {
+            data: [],
+            fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+          }),
+          {
+            programs: [stubProgram],
+            fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+          }
+        )
+      );
 
       await screen.findAllByTestId("program-details-intro");
     });
   });
 
   describe("when there is a round in the program", () => {
-    let stubRound: Round;
-
-    beforeEach(() => {
-      stubRound = makeRoundData({ ownedBy: stubProgram.id });
-
-      (useWallet as jest.Mock).mockReturnValue({
-        chain: {},
-        address: stubProgram.operatorWallets[0],
-      });
-      (useListRoundsQuery as jest.Mock).mockReturnValue({
-        data: [stubRound],
-        isLoading: false,
-        isSuccess: true,
-      });
-    });
-
     it("displays round name", async () => {
       const stubRound = makeRoundData({ ownedBy: stubProgram.id });
-      (useListRoundsQuery as jest.Mock).mockReturnValue({
-        data: [stubRound],
-        isLoading: false,
-        isSuccess: true,
-      });
 
-      renderWithContext(<ViewProgram />, { programs: [stubProgram] });
+      render(
+        wrapWithReadProgramContext(
+          wrapWithRoundContext(<ViewProgram />, {
+            data: [stubRound],
+            fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+          }),
+          {
+            programs: [stubProgram],
+            fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+          }
+        )
+      );
 
       expect(
-        screen.getByText(stubRound.roundMetadata!.name!)
+        screen.getByText(stubRound.roundMetadata.name)
       ).toBeInTheDocument();
     });
 
     it("displays grant application start and end dates", async () => {
       const stubRound = makeRoundData({ ownedBy: stubProgram.id });
-      (useListRoundsQuery as jest.Mock).mockReturnValue({
-        data: [stubRound],
-        isLoading: false,
-        isSuccess: true,
-      });
 
-      renderWithContext(<ViewProgram />, { programs: [stubProgram] });
-
-      const applicationTimePeriod = await screen.findByTestId(
-        "application-time-period"
+      render(
+        wrapWithReadProgramContext(
+          wrapWithRoundContext(<ViewProgram />, {
+            data: [stubRound],
+            fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+          }),
+          {
+            programs: [stubProgram],
+            fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+          }
+        )
       );
-      expect(applicationTimePeriod.textContent).toEqual(
-        `${stubRound?.applicationsStartTime.toLocaleDateString()} - ${stubRound.applicationsEndTime.toLocaleDateString()}`
+
+      const applicationStartTimePeriod = await screen.findByTestId(
+        "application-start-time-period"
+      );
+      const applicationEndTimePeriod = await screen.findByTestId(
+        "application-end-time-period"
+      );
+
+      const utcApplicationStartTime = formatUTCDateAsISOString(
+        stubRound!.applicationsStartTime
+      );
+      const utcApplicationEndTime = formatUTCDateAsISOString(
+        stubRound!.applicationsEndTime
+      );
+
+      expect(applicationStartTimePeriod.textContent).toEqual(
+        utcApplicationStartTime
+      );
+      expect(applicationEndTimePeriod.textContent).toEqual(
+        utcApplicationEndTime
       );
     });
 
     it("displays round start and end dates", async () => {
       const stubRound = makeRoundData({ ownedBy: stubProgram.id });
-      (useListRoundsQuery as jest.Mock).mockReturnValue({
-        data: [stubRound],
-        isLoading: false,
-        isSuccess: true,
-      });
-
-      renderWithContext(<ViewProgram />, { programs: [stubProgram] });
-
-      const roundTimePeriodElement = await screen.findByTestId(
-        "round-time-period"
+      render(
+        wrapWithReadProgramContext(
+          wrapWithRoundContext(<ViewProgram />, {
+            data: [stubRound],
+            fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+          }),
+          {
+            programs: [stubProgram],
+            fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+          }
+        )
       );
-      expect(roundTimePeriodElement.textContent).toEqual(
-        `${stubRound.roundStartTime.toLocaleDateString()} - ${stubRound.roundEndTime.toLocaleDateString()}`
+
+      const roundStartTimePeriodElement = await screen.findByTestId(
+        "round-start-time-period"
       );
+      const roundEndTimePeriodElement = await screen.findByTestId(
+        "round-end-time-period"
+      );
+
+      const utcRoundStartTime = formatUTCDateAsISOString(
+        stubRound!.roundStartTime
+      );
+      const utcRoundEndTime = formatUTCDateAsISOString(stubRound!.roundEndTime);
+
+      expect(roundStartTimePeriodElement.textContent).toEqual(
+        utcRoundStartTime
+      );
+      expect(roundEndTimePeriodElement.textContent).toEqual(utcRoundEndTime);
     });
 
     it("displays create round link", async () => {
       const stubRound = makeRoundData({ ownedBy: stubProgram.id });
-      (useListRoundsQuery as jest.Mock).mockReturnValue({
-        data: [stubRound],
-        isLoading: false,
-        isSuccess: true,
-      });
-
-      renderWithContext(<ViewProgram />, { programs: [stubProgram] });
+      render(
+        wrapWithReadProgramContext(
+          wrapWithRoundContext(<ViewProgram />, {
+            data: [stubRound],
+            fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+          }),
+          {
+            programs: [stubProgram],
+            fetchProgramsStatus: ProgressStatus.IS_SUCCESS,
+          }
+        )
+      );
 
       await screen.findByTestId("create-round-small-link");
     });

@@ -1,25 +1,51 @@
+import { faker } from "@faker-js/faker";
+import { ReduxRouter } from "@lagunovsky/redux-react-router";
+import { render } from "@testing-library/react";
+import { randomInt } from "crypto";
+import { BigNumber, ethers } from "ethers";
+import { formatBytes32String, parseEther } from "ethers/lib/utils";
+import React from "react";
+import { Provider } from "react-redux";
+import { MemoryRouter } from "react-router-dom";
+import { store } from "./app/store";
 import {
+  ApplicationContext,
+  ApplicationState,
+  initialApplicationState,
+} from "./context/application/ApplicationContext";
+import {
+  BulkUpdateGrantApplicationContext,
+  BulkUpdateGrantApplicationState,
+  initialBulkUpdateGrantApplicationState,
+} from "./context/application/BulkUpdateGrantApplicationContext";
+import {
+  ReadProgramContext,
+  ReadProgramState,
+  initialReadProgramState,
+} from "./context/program/ReadProgramContext";
+import {
+  FinalizeRoundContext,
+  FinalizeRoundState,
+  initialFinalizeRoundState,
+} from "./context/round/FinalizeRoundContext";
+import {
+  RoundContext,
+  RoundState,
+  initialRoundState,
+} from "./context/round/RoundContext";
+import {
+  ApplicationStatus,
+  ApprovedProject,
   GrantApplication,
+  MatchingStatsData,
   Program,
   ProjectCredentials,
+  ProjectMetadata,
   ProjectStatus,
   Round,
 } from "./features/api/types";
-import { randomInt } from "crypto";
-import { faker } from "@faker-js/faker";
-import { render } from "@testing-library/react";
-import { ReduxRouter } from "@lagunovsky/redux-react-router";
-import { Provider } from "react-redux";
-import { store } from "./app/store";
-import history from "./history";
 import { IAM_SERVER } from "./features/round/ViewApplicationPage";
-import { VerifiableCredential } from "@gitcoinco/passport-sdk-types";
-import {
-  initialProgramState,
-  ProgramContext,
-  ProgramState,
-} from "./context/ProgramContext";
-import { MemoryRouter } from "react-router-dom";
+import history from "./history";
 
 export const makeProgramData = (overrides: Partial<Program> = {}): Program => ({
   id: faker.finance.ethereumAddress(),
@@ -40,126 +66,250 @@ export const makeRoundData = (overrides: Partial<Round> = {}): Round => {
   const applicationsEndTime = faker.date.soon(10, applicationsStartTime);
   const roundStartTime = faker.date.future(1, applicationsEndTime);
   const roundEndTime = faker.date.soon(21, roundStartTime);
+  const roundFeePercentage = 10000;
+  const protocolFeePercentage = 10000;
   return {
     id: faker.finance.ethereumAddress(),
+    chainId: 1,
     roundMetadata: {
       name: faker.company.name(),
+      programContractAddress: faker.finance.ethereumAddress(),
+      roundType: "private",
+      eligibility: {
+        description: faker.lorem.sentence(),
+        requirements: [
+          {
+            requirement: "",
+          },
+        ],
+      },
+      quadraticFundingConfig: {
+        matchingCap: true,
+        matchingCapAmount: 100,
+        matchingFundsAvailable: 1000,
+        minDonationThreshold: true,
+        minDonationThresholdAmount: 1,
+        sybilDefense: false,
+      },
     },
     applicationsStartTime,
     applicationsEndTime,
     roundStartTime,
     roundEndTime,
-    token: faker.finance.ethereumAddress(),
+    token: ethers.constants.AddressZero, // to match our token list
     votingStrategy: faker.finance.ethereumAddress(),
+    payoutStrategy: {
+      id: faker.finance.ethereumAddress(),
+      isReadyForPayout: false,
+    },
+    protocolFeePercentage,
+    roundFeePercentage,
     ownedBy: faker.finance.ethereumAddress(),
     operatorWallets: [faker.finance.ethereumAddress()],
+    finalized: false,
     ...overrides,
   };
 };
 
-export const makeGrantApplicationData = (
-  overrides: Partial<GrantApplication> = {},
-  projectCredentials: ProjectCredentials = {}
-): GrantApplication => ({
-  id: faker.random.alpha({ count: 10, casing: "lower" }),
-  round: faker.random.alpha({ count: 59, casing: "lower" }),
-  recipient: faker.finance.ethereumAddress(),
-  project: {
-    lastUpdated: 1659714564,
-    id: faker.random.alpha({ count: 10, casing: "lower" }),
-    title: faker.lorem.sentence(2),
-    description: faker.lorem.sentence(10),
-    website: faker.internet.domainName(),
-    bannerImg: faker.random.alpha({ count: 59, casing: "lower" }),
-    logoImg: faker.random.alpha({ count: 59, casing: "lower" }),
-    metaPtr: {
+export const makeMatchingStatsData = (): MatchingStatsData => {
+  return {
+    projectName: faker.company.name(),
+    applicationId: faker.datatype.number().toString(),
+    projectId: formatBytes32String(faker.company.name().slice(0, 31)),
+    uniqueContributorsCount: faker.datatype.number(),
+    contributionsCount: faker.datatype.number(),
+    matchPoolPercentage: faker.datatype.number(),
+    matchAmountInToken: parseEther(faker.datatype.number().toString()),
+    originalMatchAmountInToken: parseEther(faker.datatype.number().toString()),
+    projectPayoutAddress: faker.finance.ethereumAddress(),
+  };
+};
+
+export const makeApplication = (): GrantApplication => {
+  return {
+    id: faker.finance.ethereumAddress(),
+    round: faker.finance.ethereumAddress(),
+    recipient: faker.finance.ethereumAddress(),
+    projectsMetaPtr: {
       protocol: randomInt(1, 10),
       pointer: faker.random.alpha({ count: 59, casing: "lower" }),
     },
-    credentials: projectCredentials,
-  },
-  answers: [
-    {
-      questionId: 1,
-      question: "Twitter",
-      answer: "DpoppDev",
-    },
-    {
-      questionId: 2,
-      question: "Github",
-      answer: "grant-round",
-    },
-    {
-      questionId: 3,
-      question: "Github Organization",
-      answer: "gitcoinco",
-    },
-  ],
-  projectsMetaPtr: {
-    protocol: randomInt(1, 10),
-    pointer: faker.random.alpha({ count: 59, casing: "lower" }),
-  },
-  status: ["PENDING", "APPROVED", "REJECTED", "APPEAL", "FRAUD"][
-    randomInt(0, 4)
-  ] as ProjectStatus,
-  ...overrides,
-});
-
-export const githubCredentialData: VerifiableCredential = {
-  "@context": ["https://www.w3.org/2018/credentials/v1"],
-  type: ["VerifiableCredential"],
-  credentialSubject: {
-    id: "did:pkh:eip155:1:0x7A67063c391F266D31eA6c9eC7C788c1323B7746",
-    hash: "v0.0.0:kJUEWnuUKJQmxma4ov/QZjxL6ohzRGL5Fz9peShRgmw=",
-    "@context": [
-      {
-        hash: "https://schema.org/Text",
-        provider: "https://schema.org/Text",
-      },
-    ],
-    provider: "ClearTextGithubOrg#gitcoinco#6887938",
-  },
-  issuer: `${IAM_SERVER}`,
-  issuanceDate: "2022-08-10T16:09:56.284Z",
-  proof: {
-    type: "Ed25519Signature2018",
-    proofPurpose: "assertionMethod",
-    verificationMethod:
-      "did:key:z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W#z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W",
-    created: "2022-08-10T16:09:56.285Z",
-    jws: "eyJhbGciOiJFZERTQSIsImNyaXQiOlsiYjY0Il0sImI2NCI6ZmFsc2V9..DpYFl50koEsj_XGa2rK9AlYny8Uvn3UZ-sCC6a0AW06TCSNmS19_5Y5TExqQtJZWAYlWFAWsuAwNiwhVFY-oDw",
-  },
-  expirationDate: "2022-11-08T17:09:56.284Z",
+    status: ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "APPEAL", "FRAUD"][
+      randomInt(0, 5)
+    ] as ProjectStatus,
+    applicationIndex: faker.datatype.number(),
+    createdAt: faker.date.past().toDateString(),
+  };
 };
-Object.freeze(githubCredentialData);
 
-export const twitterCredentialData: VerifiableCredential = {
-  "@context": ["https://www.w3.org/2018/credentials/v1"],
-  type: ["VerifiableCredential"],
-  credentialSubject: {
-    id: "did:pkh:eip155:1:0x7A67063c391F266D31eA6c9eC7C788c1323B7746",
-    hash: "v0.0.0:kJUEWnuUKJQmxma4ov/QZjxL6ohzRGL5Fz9peShRgmw=",
-    "@context": [
-      {
-        hash: "https://schema.org/Text",
-        provider: "https://schema.org/Text",
-      },
-    ],
-    provider: "ClearTextTwitter#DpoppDev",
-  },
-  issuer: `${IAM_SERVER}`,
-  issuanceDate: "2022-08-10T16:09:56.284Z",
-  proof: {
-    type: "Ed25519Signature2018",
-    proofPurpose: "assertionMethod",
-    verificationMethod:
-      "did:key:z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W#z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W",
-    created: "2022-08-10T16:09:56.285Z",
-    jws: "eyJhbGciOiJFZERTQSIsImNyaXQiOlsiYjY0Il0sImI2NCI6ZmFsc2V9..DpYFl50koEsj_XGa2rK9AlYny8Uvn3UZ-sCC6a0AW06TCSNmS19_5Y5TExqQtJZWAYlWFAWsuAwNiwhVFY-oDw",
-  },
-  expirationDate: "2022-11-08T17:09:56.284Z",
+export type QFDistribution = {
+  projectId: string;
+  matchAmountInUSD: number;
+  totalContributionsInUSD: number;
+  matchPoolPercentage: number;
+  matchAmountInToken: BigNumber;
+  projectPayoutAddress: string;
+  uniqueContributorsCount: number;
+  revisedMatch: bigint;
+  contributionsCount: number;
+  matched: bigint;
+  revisedContributionCount: number;
 };
-Object.freeze(twitterCredentialData);
+export const makeQFDistribution = (): QFDistribution => {
+  return {
+    projectId: faker.finance.ethereumAddress().toString(),
+    matchAmountInUSD: faker.datatype.number(),
+    totalContributionsInUSD: faker.datatype.number(),
+    matchPoolPercentage: faker.datatype.number(),
+    matchAmountInToken: parseEther(faker.datatype.number().toString()),
+    projectPayoutAddress: faker.finance.ethereumAddress(),
+    uniqueContributorsCount: faker.datatype.number(),
+    revisedMatch: BigInt(1),
+    contributionsCount: faker.datatype.number(),
+    matched: BigInt(1),
+    revisedContributionCount: faker.datatype.number(),
+  };
+};
+
+export const makeApprovedProjectData = (
+  overrides?: Partial<ApprovedProject>,
+  projectMetadataOverrides?: Partial<ProjectMetadata>
+): ApprovedProject => {
+  return {
+    grantApplicationId: `${faker.finance.ethereumAddress()}-${faker.finance.ethereumAddress()}`,
+    projectRegistryId: faker.datatype.number().toString(),
+    recipient: faker.finance.ethereumAddress(),
+    projectMetadata: {
+      title: faker.company.name(),
+      description: faker.lorem.sentence(),
+      website: faker.internet.url(),
+      projectTwitter: faker.internet.userName(),
+      projectGithub: faker.internet.userName(),
+      userGithub: faker.internet.userName(),
+      owners: [{ address: faker.finance.ethereumAddress() }],
+      ...projectMetadataOverrides,
+    },
+    status: ApplicationStatus.APPROVED,
+    ...overrides,
+  };
+};
+
+type ApplicationCredentialData = {
+  credentialsProviderKey: string;
+  credentialSubjectProviderString: string;
+};
+
+export interface MakeGrantApplicationDataParams {
+  ownerAddress?: string;
+  applicationIdOverride?: string;
+  roundIdOverride?: string;
+  projectGithubOverride?: string;
+  projectTwitterOverride?: string;
+  applicationAnswers?: GrantApplication["answers"];
+}
+
+export const makeGrantApplicationData = (
+  overrides?: MakeGrantApplicationDataParams
+): GrantApplication => {
+  const {
+    ownerAddress,
+    applicationIdOverride,
+    roundIdOverride,
+    projectGithubOverride,
+    projectTwitterOverride,
+    applicationAnswers,
+  } = {
+    ownerAddress: faker.finance.ethereumAddress(),
+    ...overrides,
+  };
+
+  const credentialInputData: ApplicationCredentialData[] = [];
+  if (projectGithubOverride) {
+    credentialInputData.push({
+      credentialsProviderKey: "github",
+      credentialSubjectProviderString: `ClearTextGithubOrg#${projectGithubOverride}#6887938`,
+    });
+  }
+  if (projectTwitterOverride) {
+    credentialInputData.push({
+      credentialsProviderKey: "twitter",
+      credentialSubjectProviderString: `ClearTextTwitter#${projectTwitterOverride}`,
+    });
+  }
+
+  return {
+    id:
+      applicationIdOverride ||
+      faker.random.alpha({ count: 10, casing: "lower" }),
+    round:
+      roundIdOverride || faker.random.alpha({ count: 59, casing: "lower" }),
+    recipient: faker.finance.ethereumAddress(),
+    project: {
+      lastUpdated: 1659714564,
+      createdAt: 1659714564,
+      id: faker.random.alpha({ count: 10, casing: "lower" }),
+      owners: [
+        {
+          address: ownerAddress,
+        },
+      ],
+      title: faker.lorem.sentence(2),
+      description: faker.lorem.sentence(10),
+      website: faker.internet.domainName(),
+      bannerImg: faker.random.alpha({ count: 59, casing: "lower" }),
+      logoImg: faker.random.alpha({ count: 59, casing: "lower" }),
+      metaPtr: {
+        protocol: randomInt(1, 10),
+        pointer: faker.random.alpha({ count: 59, casing: "lower" }),
+      },
+      projectGithub: projectGithubOverride ?? undefined,
+      projectTwitter: projectTwitterOverride ?? undefined,
+      credentials: makeProjectCredentials(credentialInputData, ownerAddress),
+    },
+    answers: applicationAnswers ?? [],
+    projectsMetaPtr: {
+      protocol: randomInt(1, 10),
+      pointer: faker.random.alpha({ count: 59, casing: "lower" }),
+    },
+    status: ["PENDING", "APPROVED", "REJECTED", "CANCELLED", "APPEAL", "FRAUD"][
+      randomInt(0, 4)
+    ] as ProjectStatus,
+    applicationIndex: faker.datatype.number(),
+    createdAt: faker.datatype.number().toString(),
+  };
+};
+
+export const makeProjectCredentials = (
+  credentialTypesToGenerate: ApplicationCredentialData[],
+  credentialSubjectAddress: string = faker.finance.ethereumAddress()
+): ProjectCredentials => {
+  return credentialTypesToGenerate.reduce(
+    (aggregator: ProjectCredentials, it: ApplicationCredentialData) => {
+      aggregator[it.credentialsProviderKey] = {
+        "@context": ["https://www.w3.org/2018/credentials/v1"],
+        type: ["VerifiableCredential"],
+        credentialSubject: {
+          id: `did:pkh:eip155:1:${credentialSubjectAddress}`,
+          "@context": [],
+          provider: it.credentialSubjectProviderString,
+        },
+        issuer: `${IAM_SERVER}`,
+        issuanceDate: "2022-08-10T16:09:56.284Z",
+        proof: {
+          type: "Ed25519Signature2018",
+          proofPurpose: "assertionMethod",
+          verificationMethod:
+            "did:key:z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W#z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W",
+          created: "2022-08-10T16:09:56.285Z",
+          jws: "eyJhbGciOiJFZERTQSIsImNyaXQiOlsiYjY0Il0sImI2NCI6ZmFsc2V9..DpYFl50koEsj_XGa2rK9AlYny8Uvn3UZ-sCC6a0AW06TCSNmS19_5Y5TExqQtJZWAYlWFAWsuAwNiwhVFY-oDw",
+        },
+        expirationDate: "2022-11-08T17:09:56.284Z",
+      };
+      return aggregator;
+    },
+    {}
+  );
+};
 
 export const renderWrapped = (ui: JSX.Element) => {
   render(
@@ -171,22 +321,154 @@ export const renderWrapped = (ui: JSX.Element) => {
   );
 };
 
-// TODO finish and replace other renderWrapped function
-export const renderWithContext = (
+// TODO finish and replace other renderWrapped function @vacekj
+export const renderWithProgramContext = (
   ui: JSX.Element,
-  programStateOverrides: Partial<ProgramState> = {},
+  programStateOverrides: Partial<ReadProgramState> = {},
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dispatch: any = jest.fn()
 ) =>
   render(
     <MemoryRouter>
-      <ProgramContext.Provider
+      <ReadProgramContext.Provider
         value={{
-          state: { ...initialProgramState, ...programStateOverrides },
+          state: { ...initialReadProgramState, ...programStateOverrides },
           dispatch,
         }}
       >
         {ui}
-      </ProgramContext.Provider>
+      </ReadProgramContext.Provider>
     </MemoryRouter>
   );
+
+export const renderWithApplicationContext = (
+  ui: JSX.Element,
+  grantApplicationStateOverrides: Partial<ApplicationState> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dispatch: any = jest.fn()
+) =>
+  render(
+    <MemoryRouter>
+      <ApplicationContext.Provider
+        value={{
+          state: {
+            ...initialApplicationState,
+            ...grantApplicationStateOverrides,
+          },
+          dispatch,
+        }}
+      >
+        {ui}
+      </ApplicationContext.Provider>
+    </MemoryRouter>
+  );
+
+export const wrapWithApplicationContext = (
+  ui: JSX.Element,
+  grantApplicationStateOverrides: Partial<ApplicationState> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dispatch: any = jest.fn()
+) => (
+  <ApplicationContext.Provider
+    value={{
+      state: {
+        ...initialApplicationState,
+        ...grantApplicationStateOverrides,
+      },
+      dispatch,
+    }}
+  >
+    {ui}
+  </ApplicationContext.Provider>
+);
+
+export const wrapWithFinalizeRoundContext = (
+  ui: JSX.Element,
+  finalizeRoundStateOverrides: Partial<FinalizeRoundState> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dispatch: any = jest.fn()
+) => {
+  return (
+    <FinalizeRoundContext.Provider
+      value={{
+        state: { ...initialFinalizeRoundState, ...finalizeRoundStateOverrides },
+        dispatch,
+      }}
+    >
+      {ui}
+    </FinalizeRoundContext.Provider>
+  );
+};
+
+export const wrapWithReadProgramContext = (
+  ui: JSX.Element,
+  programStateOverrides: Partial<ReadProgramState> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dispatch: any = jest.fn()
+) => (
+  <MemoryRouter>
+    <ReadProgramContext.Provider
+      value={{
+        state: { ...initialReadProgramState, ...programStateOverrides },
+        dispatch,
+      }}
+    >
+      {ui}
+    </ReadProgramContext.Provider>
+  </MemoryRouter>
+);
+
+export const wrapWithRoundContext = (
+  ui: JSX.Element,
+  roundStateOverrides: Partial<RoundState> = {},
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dispatch: any = jest.fn()
+) => (
+  <RoundContext.Provider
+    value={{
+      state: { ...initialRoundState, ...roundStateOverrides },
+      dispatch,
+    }}
+  >
+    {ui}
+  </RoundContext.Provider>
+);
+
+export const wrapWithBulkUpdateGrantApplicationContext = (
+  ui: JSX.Element,
+  bulkUpdateOverrides: Partial<BulkUpdateGrantApplicationState> = {}
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+) => (
+  <BulkUpdateGrantApplicationContext.Provider
+    value={{
+      ...initialBulkUpdateGrantApplicationState,
+      ...bulkUpdateOverrides,
+    }}
+  >
+    {ui}
+  </BulkUpdateGrantApplicationContext.Provider>
+);
+
+type ContextMock<T> = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  context: React.Context<any>;
+  value: T;
+};
+
+/**
+ * Wraps the element in an arbitrary amount of contexts for testing purposes
+ * @param element the final child element. Can be a React component, an HTML tag, or even a string, null. etc. See ReactElement type
+ * @param contexts the contexts to wrap the element with, including their values
+ */
+export function wrapInContexts<T>(
+  element: React.ReactNode,
+  contexts: ContextMock<T>[]
+) {
+  return (
+    <>
+      {contexts.reduceRight((acc, { context, value }) => {
+        return <context.Provider value={value}>{acc}</context.Provider>;
+      }, element)}
+    </>
+  );
+}

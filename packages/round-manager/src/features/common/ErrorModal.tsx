@@ -1,6 +1,6 @@
 import React, { Fragment } from "react";
 import { Dialog, Transition } from "@headlessui/react";
-import { Button } from "./styles";
+import { Button } from "common/src/styles";
 import { InformationCircleIcon } from "@heroicons/react/outline";
 
 interface ErrorModalProps {
@@ -9,6 +9,7 @@ interface ErrorModalProps {
   heading?: string;
   subheading?: string;
   tryAgainFn?: () => void;
+  doneFn?: () => void;
 }
 
 export default function ErrorModal({
@@ -19,6 +20,7 @@ export default function ErrorModal({
   tryAgainFn = () => {
     /**/
   },
+  doneFn = () => setIsOpen(false),
 }: ErrorModalProps) {
   return (
     <Transition.Root show={isOpen} as={Fragment}>
@@ -26,7 +28,9 @@ export default function ErrorModal({
         as="div"
         data-testid="error-modal"
         className="relative z-10"
-        onClose={() => setIsOpen(false)}
+        onClose={() => {
+          /* Don't close the dialog when clicking the backdrop */
+        }}
       >
         <Transition.Child
           as={Fragment}
@@ -54,7 +58,7 @@ export default function ErrorModal({
               <Dialog.Panel className="relative bg-white px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full sm:p-6">
                 <div className="sm:flex sm:items-start flex-col">
                   <div className="flex flex-row justify-between">
-                    <div className="w-12 h-10 flex items-center justify-center bg-pink-100 rounded-full">
+                    <div className="w-10 h-10 flex items-center justify-center bg-pink-100 rounded-full">
                       <InformationCircleIcon className="w-5 h-5 text-pink-500" />
                     </div>
                     <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
@@ -79,18 +83,22 @@ export default function ErrorModal({
                     <Button
                       type="button"
                       $variant="outline"
+                      className="w-full inline-flex text-sm sm:ml-3 sm:w-auto px-3.5 py-2"
                       data-testid="tryAgain"
                       onClick={() => {
                         tryAgainFn();
                         setIsOpen(false);
                       }}
-                      className="mr-4"
                     >
                       Try Again
                     </Button>
                     <Button
                       type="button"
-                      onClick={() => setIsOpen(false)}
+                      className="w-full inline-flex text-sm sm:ml-3 sm:w-auto px-3.5 py-2"
+                      onClick={() => {
+                        doneFn();
+                        setIsOpen(false);
+                      }}
                       data-testid="done"
                     >
                       Done

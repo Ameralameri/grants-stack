@@ -1,22 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { InboxInIcon as NoApplicationsForRoundIcon } from "@heroicons/react/outline";
+import { utils } from "ethers";
 import {
-  useBulkUpdateGrantApplicationsMutation,
-  useListGrantApplicationsQuery,
-} from "../api/services/grantApplication";
-import { useWallet } from "../common/Auth";
-import { Spinner } from "../common/Spinner";
+  InboxInIcon as NoApplicationsForRoundIcon,
+  DownloadIcon,
+} from "@heroicons/react/outline";
+import { Spinner, LoadingRing } from "../common/Spinner";
 import {
   BasicCard,
-  Button,
   CardContent,
   CardDescription,
   CardHeader,
   CardsContainer,
   CardTitle,
 } from "../common/styles";
-import { GrantApplication, ProjectStatus } from "../api/types";
+import { Button } from "common/src/styles";
+import {
+  ApplicationStatus,
+  GrantApplication,
+  ProgressStatus,
+  ProgressStep,
+  ProjectStatus,
+} from "../api/types";
 import ConfirmationModal from "../common/ConfirmationModal";
 import {
   AdditionalGasFeesNote,
@@ -26,43 +31,124 @@ import {
   RejectedApplicationsCount,
   Select,
 } from "./BulkApplicationCommon";
+import { useApplicationByRoundId } from "../../context/application/ApplicationContext";
+import { datadogLogs } from "@datadog/browser-logs";
+import { useBulkUpdateGrantApplications } from "../../context/application/BulkUpdateGrantApplicationContext";
+import ProgressModal from "../common/ProgressModal";
+import { errorModalDelayMs } from "../../constants";
+import ErrorModal from "../common/ErrorModal";
+import { renderToPlainText } from "common";
+import { useWallet } from "../common/Auth";
+import { roundApplicationsToCSV } from "../api/exports";
+
+async function exportAndDownloadCSV(
+  roundId: string,
+  chainId: number,
+  chainName: string
+) {
+  const csv = await roundApplicationsToCSV(roundId, chainId, chainName);
+
+  // create a download link and click it
+  const outputBlob = new Blob([csv], {
+    type: "text/csv;charset=utf-8;",
+  });
+
+  const link = document.createElement("a");
+
+  try {
+    const dataUrl = URL.createObjectURL(outputBlob);
+    link.setAttribute("href", dataUrl);
+    link.setAttribute("download", `applications-${roundId}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+  } finally {
+    document.body.removeChild(link);
+  }
+}
 
 export default function ApplicationsReceived() {
-  const [openModal, setOpenModal] = useState(false);
-  const [bulkSelect, setBulkSelect] = useState(false);
   const { id } = useParams();
-  const { provider, signer } = useWallet();
+  const { chain } = useWallet();
 
-  const { data, refetch, isLoading, isSuccess } = useListGrantApplicationsQuery(
-    {
-      /* Non-issue since if ID was null or undef., we wouldn't render this page, but a 404 instead  */
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      roundId: id!,
-      signerOrProvider: provider,
-      status: "PENDING",
-    }
-  );
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const { applications, isLoading } = useApplicationByRoundId(id!);
+  const pendingApplications =
+    applications?.filter(
+      (a) => a.status == ApplicationStatus.PENDING.toString()
+    ) || [];
 
-  const [bulkUpdateGrantApplications, { isLoading: isBulkUpdateLoading }] =
-    useBulkUpdateGrantApplicationsMutation();
-
+  const [bulkSelect, setBulkSelect] = useState(false);
+  const [openModal, setOpenModal] = useState(false);
+  const [openProgressModal, setOpenProgressModal] = useState(false);
+  const [openErrorModal, setOpenErrorModal] = useState(false);
   const [selected, setSelected] = useState<GrantApplication[]>([]);
+  const [isCsvExportLoading, setIsCsvExportLoading] = useState(false);
+
+  const {
+    bulkUpdateGrantApplications,
+    contractUpdatingStatus,
+    indexingStatus,
+  } = useBulkUpdateGrantApplications();
+  const isBulkUpdateLoading =
+    contractUpdatingStatus == ProgressStatus.IN_PROGRESS ||
+    indexingStatus == ProgressStatus.IN_PROGRESS;
+
+  const progressSteps: ProgressStep[] = [
+    {
+      name: "Updating",
+      description: `Updating application statuses on the contract.`,
+      status: contractUpdatingStatus,
+    },
+    {
+      name: "Indexing",
+      description: "The subgraph is indexing the data.",
+      status: indexingStatus,
+    },
+    {
+      name: "Redirecting",
+      description: "Just another moment while we finish things up.",
+      status:
+        indexingStatus === ProgressStatus.IS_SUCCESS
+          ? ProgressStatus.IN_PROGRESS
+          : ProgressStatus.NOT_STARTED,
+    },
+  ];
 
   useEffect(() => {
-    if (isSuccess || !bulkSelect) {
+    if (!isLoading || !bulkSelect) {
       setSelected(
-        (data || []).map((application) => {
+        (pendingApplications || []).map((application) => {
           return {
             id: application.id,
             round: application.round,
             recipient: application.recipient,
             projectsMetaPtr: application.projectsMetaPtr,
             status: application.status,
+            applicationIndex: application.applicationIndex,
+            createdAt: application.createdAt,
           };
         })
       );
     }
-  }, [data, isSuccess, bulkSelect]);
+  }, [applications, isLoading, bulkSelect]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (contractUpdatingStatus === ProgressStatus.IS_ERROR) {
+      setTimeout(() => {
+        setOpenErrorModal(true);
+        setOpenProgressModal(false);
+      }, errorModalDelayMs);
+    }
+
+    if (indexingStatus === ProgressStatus.IS_SUCCESS) {
+      window.location.reload();
+    }
+  }, [contractUpdatingStatus, indexingStatus]);
+
+  const handleDone = () => {
+    window.location.reload();
+  };
 
   const toggleSelection = (id: string, status: ProjectStatus) => {
     const newState = selected?.map((grantApp: GrantApplication) => {
@@ -84,40 +170,86 @@ export default function ApplicationsReceived() {
 
   const handleBulkReview = async () => {
     try {
+      setOpenProgressModal(true);
+      setOpenModal(false);
       await bulkUpdateGrantApplications({
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         roundId: id!,
-        applications: selected.filter(
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        applications: applications!,
+        selectedApplications: selected.filter(
           (application) => application.status !== "PENDING"
         ),
-        signer,
-        provider,
-      }).unwrap();
+      });
       setBulkSelect(false);
-      setOpenModal(false);
-      refetch();
-    } catch (e) {
-      console.error(e);
+      setOpenProgressModal(false);
+    } catch (error) {
+      datadogLogs.logger.error(`error: handleBulkReview - ${error}, id: ${id}`);
+      console.error("handleBulkReview", error);
     }
   };
 
+  async function handleExportCsvClick(
+    roundId: string,
+    chainId: number,
+    chainName: string
+  ) {
+    try {
+      setIsCsvExportLoading(true);
+      await exportAndDownloadCSV(roundId, chainId, chainName);
+    } catch (e) {
+      datadogLogs.logger.error(
+        `error: exportApplicationCsv - ${e}, id: ${roundId}`
+      );
+      console.error("exportApplicationCsv", e);
+    } finally {
+      setIsCsvExportLoading(false);
+    }
+  }
+
   return (
     <div>
-      {data && data.length > 0 && (
-        <div className="flex items-center justify-end mb-4">
-          <span className="text-grey-400 text-sm mr-6">
-            Save in gas fees by approving/rejecting multiple applications at
-            once.
-          </span>
-          {bulkSelect ? (
-            <Cancel onClick={() => setBulkSelect(false)} />
-          ) : (
-            <Select onClick={() => setBulkSelect(true)} />
-          )}
-        </div>
-      )}
+      <div className="flex items-center mb-4">
+        {id && applications && applications.length > 0 && (
+          <Button
+            type="button"
+            $variant="outline"
+            className="text-xs px-3 py-1 inline-block"
+            disabled={isCsvExportLoading}
+            onClick={() =>
+              handleExportCsvClick(utils.getAddress(id), chain.id, chain.name)
+            }
+          >
+            {isCsvExportLoading ? (
+              <>
+                <LoadingRing className="animate-spin w-3 h-3 inline-block mr-2 -mt-0.5" />
+                <span className="text-grey-400">Exporting...</span>
+              </>
+            ) : (
+              <>
+                <DownloadIcon className="w-4 h-4 inline -mt-0.5 mr-1" />
+                <span>CSV</span>
+              </>
+            )}
+          </Button>
+        )}
+        {pendingApplications && pendingApplications.length > 0 && (
+          <div className="flex items-center justify-end ml-auto">
+            <span className="text-grey-400 text-sm mr-6">
+              Save in gas fees by approving/rejecting multiple applications at
+              once.
+            </span>
+            {bulkSelect ? (
+              <Cancel onClick={() => setBulkSelect(false)} />
+            ) : (
+              <Select onClick={() => setBulkSelect(true)} />
+            )}
+          </div>
+        )}
+      </div>
       <CardsContainer>
-        {isSuccess &&
-          data?.map((application, index) => (
+        {!isLoading &&
+          pendingApplications?.map((application, index) => (
             <BasicCard
               key={index}
               className="application-card"
@@ -138,9 +270,9 @@ export default function ApplicationsReceived() {
               </CardHeader>
               <Link to={`/round/${id}/application/${application.id}`}>
                 <CardContent>
-                  <CardTitle>{application.project!.title}</CardTitle>
+                  <CardTitle>{application?.project?.title}</CardTitle>
                   <CardDescription>
-                    {application.project!.description}
+                    {renderToPlainText(application?.project?.description ?? "")}
                   </CardDescription>
                 </CardContent>
               </Link>
@@ -149,7 +281,9 @@ export default function ApplicationsReceived() {
         {isLoading && (
           <Spinner text="We're fetching your Grant Applications." />
         )}
-        {!isLoading && data?.length === 0 && <NoApplicationsContent />}
+        {!isLoading && pendingApplications?.length === 0 && (
+          <NoApplicationsContent />
+        )}
       </CardsContainer>
       {selected &&
         selected?.filter((obj) => obj.status !== "PENDING").length > 0 && (
@@ -191,6 +325,17 @@ export default function ApplicationsReceived() {
             />
           </>
         )}
+      <ProgressModal
+        isOpen={openProgressModal}
+        subheading={"Please hold while we update the grant applications."}
+        steps={progressSteps}
+      />
+      <ErrorModal
+        isOpen={openErrorModal}
+        setIsOpen={setOpenErrorModal}
+        tryAgainFn={handleBulkReview}
+        doneFn={handleDone}
+      />
     </div>
   );
 }
@@ -235,7 +380,7 @@ function Continue(props: { onClick: () => void }) {
 
 function NumberOfApplicationsSelectedMessage(props: {
   grantApplications: GrantApplication[];
-  predicate: (obj: any) => boolean;
+  predicate: (obj: GrantApplication) => boolean;
 }) {
   return (
     <span className="text-grey-400 text-sm mr-6">

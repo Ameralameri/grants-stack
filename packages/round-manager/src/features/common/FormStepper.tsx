@@ -1,4 +1,4 @@
-import { Button } from "./styles";
+import { Button } from "common/src/styles";
 
 export interface FormStepperProps {
   currentStep: number;
@@ -14,12 +14,22 @@ export function FormStepper({
   return (
     <div className="flex justify-end space-x-4">
       {props.currentStep > 1 && (
-        <Button type="button" $variant="outline" onClick={props.prev}>
+        <Button
+          className="px-3.5 py-2 shadow-sm text-sm"
+          type="button"
+          $variant="outline"
+          onClick={props.prev}
+        >
           Previous
         </Button>
       )}
 
-      <Button type="submit" $variant="solid" disabled={disableNext}>
+      <Button
+        className="px-3.5 py-2 shadow-sm text-sm"
+        type="submit"
+        $variant="solid"
+        disabled={disableNext}
+      >
         {props.currentStep === props.stepsCount ? "Launch" : "Next"}
       </Button>
     </div>

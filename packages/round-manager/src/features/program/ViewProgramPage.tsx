@@ -7,46 +7,50 @@ import {
 } from "@heroicons/react/solid";
 import { RefreshIcon } from "@heroicons/react/outline";
 
-import { Button } from "../common/styles";
+import { Button } from "common/src/styles";
 import { useWallet } from "../common/Auth";
-import { useListRoundsQuery } from "../api/services/round";
 import Navbar from "../common/Navbar";
-import Footer from "../common/Footer";
+import Footer from "common/src/components/Footer";
 import { abbreviateAddress } from "../api/utils";
+import { formatUTCDateAsISOString, getUTCTime } from "common";
 import { datadogLogs } from "@datadog/browser-logs";
 import { useEffect, useState } from "react";
 import NotFoundPage from "../common/NotFoundPage";
 import AccessDenied from "../common/AccessDenied";
 
-import { useProgramById } from "../../context/ProgramContext";
+import { useProgramById } from "../../context/program/ReadProgramContext";
 import { Spinner } from "../common/Spinner";
+import { useRounds } from "../../context/round/RoundContext";
+import { ProgressStatus } from "../api/types";
+import { useDebugMode } from "../../hooks";
 
 export default function ViewProgram() {
   datadogLogs.logger.info("====> Route: /program/:id");
   datadogLogs.logger.info(`====> URL: ${window.location.href}`);
 
-  const { id } = useParams();
+  const { id: programId } = useParams();
 
-  const { address, provider } = useWallet();
+  const { address } = useWallet();
 
-  const { program: programToRender, isLoading } = useProgramById(id);
+  const { program: programToRender, fetchProgramsStatus } =
+    useProgramById(programId);
+  const isProgramFetched = fetchProgramsStatus == ProgressStatus.IS_SUCCESS;
 
-  const {
-    data: rounds,
-    isLoading: isRoundsLoading,
-    isSuccess: isRoundsFetched,
-  } = useListRoundsQuery({
-    address,
-    signerOrProvider: provider,
-    programId: id,
-  });
+  const { data: rounds, fetchRoundStatus } = useRounds(programId);
+  const isRoundsFetched = fetchRoundStatus == ProgressStatus.IS_SUCCESS;
 
   const [programExists, setProgramExists] = useState(true);
   const [hasAccess, setHasAccess] = useState(true);
+  const debugModeEnabled = useDebugMode();
 
   useEffect(() => {
-    if (isRoundsFetched) {
+    if (isProgramFetched) {
       setProgramExists(!!programToRender);
+
+      if (debugModeEnabled) {
+        setHasAccess(true);
+        return;
+      }
 
       if (programToRender) {
         programToRender.operatorWallets.includes(address?.toLowerCase())
@@ -56,7 +60,7 @@ export default function ViewProgram() {
         setHasAccess(true);
       }
     }
-  }, [isRoundsFetched, programToRender, address]);
+  }, [isProgramFetched, programToRender, address, debugModeEnabled]);
 
   const roundItems = rounds
     ? rounds.map((round, index) => (
@@ -67,7 +71,7 @@ export default function ViewProgram() {
           >
             <div className="flex-1 min-w-0">
               <p className="text-sm pb-3 mb-1 font-medium text-gray-900">
-                {round.roundMetadata!.name}
+                {round.roundMetadata.name}
               </p>
 
               <div className="grid sm:grid-cols-3">
@@ -84,13 +88,29 @@ export default function ViewProgram() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  <span className="text-grey-400 my-auto">Applications: </span>
-                  <span
-                    className="my-auto"
-                    data-testid="application-time-period"
-                  >
-                    {`${round.applicationsStartTime.toLocaleDateString()} - ${round.applicationsEndTime.toLocaleDateString()}`}
+                  <span className="text-grey-400 my-auto mr-2">
+                    Applications:{" "}
                   </span>
+                  <div>
+                    <p
+                      className="my-auto text-xs"
+                      data-testid="application-time-period"
+                    >
+                      <span data-testid="application-start-time-period">
+                        {formatUTCDateAsISOString(round.applicationsStartTime)}
+                      </span>
+                      <span className="mx-1">-</span>
+                      <span data-testid="application-end-time-period">
+                        {formatUTCDateAsISOString(round.applicationsEndTime)}
+                      </span>
+                    </p>
+                    <p className="text-xs text-grey-400">
+                      <span className="mr-2">
+                        ({getUTCTime(round.applicationsStartTime)})
+                      </span>
+                      <span>({getUTCTime(round.applicationsEndTime)})</span>
+                    </p>
+                  </div>
                 </p>
                 <p className="text-xs flex gap-1 md:ml-8">
                   <svg
@@ -105,9 +125,27 @@ export default function ViewProgram() {
                       clipRule="evenodd"
                     />
                   </svg>
-                  <span className="text-grey-400 my-auto">Round: </span>
+                  <span className="text-grey-400 my-auto mr-2">Round: </span>
                   <span className="my-auto" data-testid="round-time-period">
-                    {`${round.roundStartTime.toLocaleDateString()} - ${round.roundEndTime.toLocaleDateString()}`}
+                    <p
+                      className="my-auto text-xs"
+                      data-testid="round-time-period"
+                    >
+                      <span data-testid="round-start-time-period">
+                        {formatUTCDateAsISOString(round.roundStartTime)}
+                      </span>
+                      <span className="mx-1">-</span>
+                      <span data-testid="round-end-time-period">
+                        {formatUTCDateAsISOString(round.roundEndTime)}
+                      </span>
+                    </p>
+
+                    <p className="text-xs text-grey-400">
+                      <span className="mr-2">
+                        ({getUTCTime(round.roundStartTime)})
+                      </span>
+                      <span>({getUTCTime(round.roundEndTime)})</span>
+                    </p>
                   </span>
                 </p>
               </div>
@@ -166,7 +204,7 @@ export default function ViewProgram() {
     </div>
   );
 
-  return isLoading ? (
+  return fetchProgramsStatus !== ProgressStatus.IS_SUCCESS ? (
     <Spinner text="We're fetching your Program." />
   ) : (
     <>
@@ -220,11 +258,11 @@ export default function ViewProgram() {
                         {roundItems}
                       </div>
                     )}
-                    {isRoundsLoading && (
-                      <Spinner text="We're fetching your Rounds." />
-                    )}
                   </div>
                 </div>
+                {fetchRoundStatus == ProgressStatus.IN_PROGRESS && (
+                  <Spinner text="We're fetching your Rounds." />
+                )}
               </div>
 
               {isRoundsFetched && roundItems.length === 0 && noRoundsGroup}

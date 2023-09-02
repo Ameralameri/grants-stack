@@ -2,35 +2,35 @@
   "name": "root",
   "private": true,
   "license": "AGPL-3.0-only",
-  "engines" : {
-    "npm" : ">=8.5.5",
-    "node" : ">=16.15.0"
+  "engines": {
+    "npm": ">=8.5.5",
+    "node": ">=16.15.0"
   },
   "scripts": {
-    "start": "yarn rm-start",
-    "build": "yarn rm-build",
-    "compile": "yarn hh-compile",
-    "test": "yarn hh-test && yarn rm-test",
-
-    "// contracts script": "====== packages/contract specific ======",
-    "hh-test": "cd packages/contracts; yarn run test",
-    "hh-compile": "cd packages/contracts; yarn compile",
-
-
+    "start": "pnpm --filter round-manager run start",
+    "build": "pnpm turbo build",
+    "compile": "pnpm --filter contracts run compile ",
+    "test": "pnpm run test",
+    "typecheck": "turbo run typecheck",
     "// round manager script": "====== packages/round-manager specific ======",
-    "rm-build": "cd packages/round-manager; yarn build",
-    "rm-test": "cd packages/round-manager; yarn test",
-    "rm-start": "cd packages/round-manager; yarn start",
-    "rm-slither": "cd packages/round-manager; slither .",
-
-
+    "rm-build": "pnpm --filter round-manager run build",
+    "rm-test": "pnpm --filter round-manager run test",
+    "rm-start": "pnpm --filter round-manager run start",
+    "rm-slither": "pnpm --filter round-manager run slither",
+    "rm-typecheck": "pnpm --filter round-manager exec  -- tsc --noEmit",
     "// grant explorer script": "====== packages/grant-explorer specific ======",
-    "re-build": "cd packages/grant-explorer; yarn build",
-    "re-test": "cd packages/grant-explorer; yarn test",
-    "re-start": "cd packages/grant-explorer; yarn start",
-    "re-slither": "cd packages/grant-explorer; slither ."
+    "re-build": "turbo run build --filter=grant-explorer",
+    "re-test": "turbo run test --filter=grant-explorer",
+    "re-start": "pnpm --filter grant-explorer run start",
+    "re-typecheck": "turbo run typecheck --filter=grant-explorer",
+    "// builder script": "====== packages/builder specific ======",
+    "b-start": "pnpm --filter builder run start"
   },
   "devDependencies": {
-    "lerna": "^4.0.0"
+    "@commitlint/cli": "^17.6.3",
+    "@commitlint/config-conventional": "^17.6.3"
+  },
+  "dependencies": {
+    "turbo": "^1.10.9"
   }
 }

@@ -1,12 +1,14 @@
+import { datadogLogs } from "@datadog/browser-logs";
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-
+import { useApplicationByRoundId } from "../../context/application/ApplicationContext";
 import {
-  useBulkUpdateGrantApplicationsMutation,
-  useListGrantApplicationsQuery,
-} from "../api/services/grantApplication";
-import { GrantApplication, ProjectStatus } from "../api/types";
-import { useWallet } from "../common/Auth";
+  ApplicationStatus,
+  GrantApplication,
+  ProgressStatus,
+  ProgressStep,
+  ProjectStatus,
+} from "../api/types";
 import ConfirmationModal from "../common/ConfirmationModal";
 import { Spinner } from "../common/Spinner";
 import {
@@ -25,39 +27,91 @@ import {
   Continue,
   Select,
 } from "./BulkApplicationCommon";
+import { useBulkUpdateGrantApplications } from "../../context/application/BulkUpdateGrantApplicationContext";
+import ProgressModal from "../common/ProgressModal";
+import ErrorModal from "../common/ErrorModal";
+import { errorModalDelayMs } from "../../constants";
 
 export default function ApplicationsRejected() {
   const { id } = useParams();
-  const { provider, signer } = useWallet();
 
-  const { data, isLoading, isSuccess } = useListGrantApplicationsQuery({
-    roundId: id!,
-    signerOrProvider: provider,
-    status: "REJECTED",
-  });
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const { applications, isLoading } = useApplicationByRoundId(id!);
+  const rejectedApplications =
+    applications?.filter(
+      (a) => a.status == ApplicationStatus.REJECTED.toString()
+    ) || [];
 
   const [bulkSelectRejected, setBulkSelectRejected] = useState(false);
-  const [openModal, setOpenModal] = useState(false);
+  const [openConfirmationModal, setOpenConfirmationModal] = useState(false);
+  const [openProgressModal, setOpenProgressModal] = useState(false);
+  const [openErrorModal, setOpenErrorModal] = useState(false);
   const [selected, setSelected] = useState<GrantApplication[]>([]);
 
-  const [bulkUpdateGrantApplications, { isLoading: isBulkUpdateLoading }] =
-    useBulkUpdateGrantApplicationsMutation();
+  const {
+    bulkUpdateGrantApplications,
+    contractUpdatingStatus,
+    indexingStatus,
+  } = useBulkUpdateGrantApplications();
+  const isBulkUpdateLoading =
+    contractUpdatingStatus == ProgressStatus.IN_PROGRESS ||
+    indexingStatus == ProgressStatus.IN_PROGRESS;
+
+  const progressSteps: ProgressStep[] = [
+    {
+      name: "Updating",
+      description: `Updating the application status on the contract`,
+      status: contractUpdatingStatus,
+    },
+    {
+      name: "Indexing",
+      description: "The subgraph is indexing the data.",
+      status: indexingStatus,
+    },
+    {
+      name: "Redirecting",
+      description: "Just another moment while we finish things up.",
+      status:
+        indexingStatus === ProgressStatus.IS_SUCCESS
+          ? ProgressStatus.IN_PROGRESS
+          : ProgressStatus.NOT_STARTED,
+    },
+  ];
 
   useEffect(() => {
-    if (isSuccess || !bulkSelectRejected) {
+    if (!isLoading || !bulkSelectRejected) {
       setSelected(
-        (data || []).map((application) => {
+        rejectedApplications?.map((application) => {
           return {
             id: application.id,
             round: application.round,
             recipient: application.recipient,
             projectsMetaPtr: application.projectsMetaPtr,
             status: application.status,
+            applicationIndex: application.applicationIndex,
+            createdAt: application.createdAt,
           };
         })
       );
     }
-  }, [data, isSuccess, bulkSelectRejected]);
+  }, [applications, isLoading, bulkSelectRejected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (contractUpdatingStatus === ProgressStatus.IS_ERROR) {
+      setTimeout(() => {
+        setOpenErrorModal(true);
+        setOpenProgressModal(false);
+      }, errorModalDelayMs);
+    }
+
+    if (indexingStatus === ProgressStatus.IS_SUCCESS) {
+      window.location.reload();
+    }
+  }, [contractUpdatingStatus, indexingStatus]);
+
+  const handleDone = () => {
+    window.location.reload();
+  };
 
   const toggleApproval = (id: string) => {
     const newState = selected?.map((grantApp: GrantApplication) => {
@@ -80,24 +134,28 @@ export default function ApplicationsRejected() {
 
   const handleBulkReview = async () => {
     try {
+      setOpenProgressModal(true);
+      setOpenConfirmationModal(false);
       await bulkUpdateGrantApplications({
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         roundId: id!,
-        applications: selected.filter(
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        applications: applications!,
+        selectedApplications: selected.filter(
           (application) => application.status === "APPROVED"
         ),
-        signer,
-        provider,
-      }).unwrap();
+      });
       setBulkSelectRejected(false);
-      setOpenModal(false);
-    } catch (e) {
-      console.error(e);
+      setOpenProgressModal(false);
+    } catch (error) {
+      datadogLogs.logger.error(`error: handleBulkReview - ${error}, id: ${id}`);
+      console.error("handleBulkReview", error);
     }
   };
 
   return (
     <>
-      {data && data.length > 0 && (
+      {rejectedApplications && rejectedApplications.length > 0 && (
         <div className="flex items-center justify-end mb-4">
           <span className="text-grey-400 text-sm mr-6">
             Save in gas fees by approving/rejecting multiple applications at
@@ -111,8 +169,8 @@ export default function ApplicationsRejected() {
         </div>
       )}
       <CardsContainer>
-        {isSuccess &&
-          data?.map((application, index) => (
+        {!isLoading &&
+          rejectedApplications?.map((application, index) => (
             <BasicCard
               key={index}
               className="application-card"
@@ -131,9 +189,9 @@ export default function ApplicationsRejected() {
                 to={`/round/${id}/application/${application.id}`}
               >
                 <CardContent>
-                  <CardTitle>{application.project!.title}</CardTitle>
+                  <CardTitle>{application.project?.title}</CardTitle>
                   <CardDescription>
-                    {application.project!.description}
+                    {application.project?.description}
                   </CardDescription>
                 </CardContent>
               </Link>
@@ -148,7 +206,7 @@ export default function ApplicationsRejected() {
           <Continue
             grantApplications={selected}
             status="APPROVED"
-            onClick={() => setOpenModal(true)}
+            onClick={() => setOpenConfirmationModal(true)}
           />
         )}
       <ConfirmationModal
@@ -166,8 +224,19 @@ export default function ApplicationsRejected() {
             <AdditionalGasFeesNote />
           </>
         }
-        isOpen={openModal}
-        setIsOpen={setOpenModal}
+        isOpen={openConfirmationModal}
+        setIsOpen={setOpenConfirmationModal}
+      />
+      <ProgressModal
+        isOpen={openProgressModal}
+        subheading={"Please hold while we update the grant applications."}
+        steps={progressSteps}
+      />
+      <ErrorModal
+        isOpen={openErrorModal}
+        setIsOpen={setOpenErrorModal}
+        tryAgainFn={handleBulkReview}
+        doneFn={handleDone}
       />
     </>
   );

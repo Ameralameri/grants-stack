@@ -1,19 +1,16 @@
-/**
- * This file contains all contract definitions for Gitcoin Grants Explorer
- */
+import { ChainId } from "common";
+import { Hex } from "viem";
 
-/////////////////////////////////////////////////
-// BELOW IS AN EXAMPLE CONTRACT DEFINITION     //
-/////////////////////////////////////////////////
-
-// import abi from "./abi"
-// import { Contract } from "./types"
-
-
-// /* ProgramFactory  */
-// export const programFactoryContract: Contract = {
-//   address: "0x0EbD2E2130b73107d0C45fF2E16c93E7e2e10e3a",
-//   abi: abi.programFactory
-// }
-
-export {}
+export const MRC_CONTRACTS: Record<ChainId, Hex> = {
+  [ChainId.MAINNET]: "0x3bA9DF642f5e895DC76d3Aa9e4CE8291108E65b1",
+  [ChainId.GOERLI_CHAIN_ID]: "0x69433D914c7Cd8b69710a3275bcF3df4CB3eDA94",
+  [ChainId.PGN]: "0x03506eD3f57892C85DB20C36846e9c808aFe9ef4",
+  [ChainId.PGN_TESTNET]: "0x4268900E904aD87903De593AA5424406066d9ea2",
+  [ChainId.FANTOM_MAINNET_CHAIN_ID]:
+    "0x03506eD3f57892C85DB20C36846e9c808aFe9ef4",
+  [ChainId.OPTIMISM_MAINNET_CHAIN_ID]:
+    "0x15fa08599EB017F89c1712d0Fe76138899FdB9db",
+  [ChainId.FANTOM_TESTNET_CHAIN_ID]: "0x" /*TODO: add ftm testnet*/,
+  [ChainId.ARBITRUM_GOERLI]: "0x8e1bD5Da87C14dd8e08F7ecc2aBf9D1d558ea174",
+  [ChainId.ARBITRUM]: "0x8e1bD5Da87C14dd8e08F7ecc2aBf9D1d558ea174",
+};

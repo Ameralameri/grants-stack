@@ -1,26 +1,76 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
-  githubCredentialData,
   makeGrantApplicationData,
-  renderWrapped,
-  twitterCredentialData,
+  MakeGrantApplicationDataParams,
+  makeRoundData,
 } from "../../../test-utils";
 import ViewApplicationPage from "../ViewApplicationPage";
-import { screen, waitFor } from "@testing-library/react";
-import { useListRoundsQuery } from "../../api/services/round";
 import {
-  useListGrantApplicationsQuery,
-  useUpdateGrantApplicationMutation,
-} from "../../api/services/grantApplication";
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { useDisconnect, useSwitchNetwork } from "wagmi";
 import { PassportVerifier } from "@gitcoinco/passport-sdk-verifier";
-import { ProjectCredentials } from "../../api/types";
+import {
+  ApplicationContext,
+  ApplicationState,
+  initialApplicationState,
+} from "../../../context/application/ApplicationContext";
+import { MemoryRouter } from "react-router-dom";
+import {
+  getApplicationsByRoundId,
+  updateApplicationStatuses,
+} from "../../api/application";
+import { faker } from "@faker-js/faker";
+import { RoundContext } from "../../../context/round/RoundContext";
+import { useWallet } from "../../common/Auth";
+import {
+  BulkUpdateGrantApplicationContext,
+  BulkUpdateGrantApplicationState,
+  initialBulkUpdateGrantApplicationState,
+} from "../../../context/application/BulkUpdateGrantApplicationContext";
+import { GrantApplication, ProgressStatus } from "../../api/types";
 
-jest.mock("../../api/services/grantApplication");
-jest.mock("../../api/services/round");
-jest.mock("../../common/Auth", () => ({
-  useWallet: () => ({ provider: {} }),
+jest.mock("../../api/application");
+jest.mock("../../common/Auth");
+
+jest.mock("../../../constants", () => ({
+  ...jest.requireActual("../../../constants"),
+  errorModalDelayMs: 0, // NB: use smaller delay for faster tests
 }));
+
+const mockAddress = "0x0";
+const mockWallet = {
+  provider: {
+    network: {
+      chainId: 1,
+    },
+  },
+  address: mockAddress,
+  signer: {
+    getChainId: () => {
+      /* do nothing */
+    },
+  },
+  chain: {
+    name: "abc",
+  },
+};
+
+jest.mock("react-router-dom", () => ({
+  ...jest.requireActual("react-router-dom"),
+  useParams: () => ({
+    id: "some-application-id",
+    roundId: "some-round-id",
+  }),
+}));
+
+const applicationIdOverride = "some-application-id";
+const roundIdOverride = "some-round-id";
+
 jest.mock("@gitcoinco/passport-sdk-verifier");
 jest.mock("@rainbow-me/rainbowkit", () => ({
   ConnectButton: jest.fn(),
@@ -34,42 +84,372 @@ const verifyCredentialMock = jest.spyOn(
 
 describe("ViewApplicationPage", () => {
   beforeEach(() => {
-    (useListRoundsQuery as any).mockReturnValue({ round: {} });
+    (useWallet as jest.Mock).mockImplementation(() => mockWallet);
     (useSwitchNetwork as any).mockReturnValue({ chains: [] });
     (useDisconnect as any).mockReturnValue({});
   });
 
-  it.each([
-    ["github", { github: githubCredentialData }],
-    ["twitter", { twitter: twitterCredentialData }],
-  ])(
-    "shows no project %s verification when you have an invalid verifiable credential for it",
-    async (provider: string, projectCredentials: ProjectCredentials) => {
-      verifyCredentialMock.mockResolvedValue(false);
+  it("should display 404 when there no application is found", () => {
+    (getApplicationsByRoundId as jest.Mock).mockRejectedValue(
+      "No application :("
+    );
 
-      const verifiableGithubCredential = {
-        application: makeGrantApplicationData({}, projectCredentials),
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [],
+      isLoading: false,
+    });
+
+    expect(screen.getByText("404 ERROR")).toBeInTheDocument();
+    expect(screen.queryByText("Access Denied!")).not.toBeInTheDocument();
+  });
+
+  it("should display access denied when wallet accessing is not round operator", () => {
+    const application = makeGrantApplicationData({ applicationIdOverride });
+    (getApplicationsByRoundId as any).mockResolvedValue(application);
+    const wrongAddress = faker.finance.ethereumAddress();
+    (useWallet as jest.Mock).mockImplementation(() => ({
+      ...mockWallet,
+      address: wrongAddress,
+    }));
+
+    renderWithContext(<ViewApplicationPage />, { applications: [application] });
+    expect(screen.getByText("Access Denied!")).toBeInTheDocument();
+    expect(screen.queryByText("404 ERROR")).not.toBeInTheDocument();
+  });
+
+  it("should display project's application answers", async () => {
+    const expectedAnswers = [
+      {
+        questionId: 0,
+        question: "Email Address",
+        answer: "johndoe@example.com",
+      },
+      {
+        questionId: 1,
+        question: "Funding Sources",
+        answer: "Founder capital",
+      },
+      {
+        questionId: 2,
+        question: "Team Size",
+        answer: "10",
+      },
+    ];
+
+    const grantApplicationWithApplicationAnswers = makeGrantApplicationData({
+      applicationIdOverride,
+      applicationAnswers: expectedAnswers,
+    });
+
+    (getApplicationsByRoundId as any).mockResolvedValue(
+      grantApplicationWithApplicationAnswers
+    );
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplicationWithApplicationAnswers],
+    });
+
+    expect(
+      await screen.findByText(expectedAnswers[0].answer)
+    ).toBeInTheDocument();
+  });
+
+  describe("when approve or reject decision is selected", () => {
+    let application: GrantApplication;
+
+    beforeEach(() => {
+      jest.clearAllMocks();
+      application = makeGrantApplicationData({
+        applicationIdOverride,
+        roundIdOverride,
+      });
+      (getApplicationsByRoundId as any).mockResolvedValue(application);
+    });
+
+    it("should open confirmation modal when approve is clicked", async () => {
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [application],
+      });
+      fireEvent.click(screen.getByText(/Approve/));
+
+      expect(await screen.findByTestId("confirm-modal")).toBeInTheDocument();
+    });
+
+    it("should open confirmation modal when reject is clicked", async () => {
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [application],
+      });
+      fireEvent.click(screen.getByText(/Reject/));
+
+      expect(await screen.findByTestId("confirm-modal")).toBeInTheDocument();
+    });
+
+    it("should start the bulk update process to persist approve decision when confirm is selected", async () => {
+      const transactionBlockNumber = 10;
+      (updateApplicationStatuses as jest.Mock).mockResolvedValue(
+        transactionBlockNumber
+      );
+
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [application],
+      });
+      fireEvent.click(screen.getByText(/Approve/));
+      await screen.findByTestId("confirm-modal");
+      fireEvent.click(screen.getByText("Confirm"));
+
+      await waitFor(() => {
+        expect(updateApplicationStatuses).toBeCalled();
+      });
+
+      application.status = "APPROVED";
+
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const expected = {
+        id: application.id,
+        round: application.round,
+        recipient: application.recipient,
+        projectsMetaPtr: application.projectsMetaPtr,
+        status: application.status,
       };
 
-      (useListGrantApplicationsQuery as any).mockReturnValue(
-        verifiableGithubCredential
-      );
-      (useUpdateGrantApplicationMutation as any).mockReturnValue([
-        jest.fn(),
-        { isLoading: false },
-      ]);
-      (useListRoundsQuery as any).mockReturnValue({ round: {} });
-      (useSwitchNetwork as any).mockReturnValue({ chains: [] });
-      (useDisconnect as any).mockReturnValue({});
+      expect(updateApplicationStatuses).toBeCalled();
+      const updateApplicationStatusesFirstCall = (
+        updateApplicationStatuses as jest.Mock
+      ).mock.calls[0];
+      const actualRoundId = updateApplicationStatusesFirstCall[0];
+      expect(actualRoundId).toEqual(roundIdOverride);
+    });
 
-      await renderWrapped(<ViewApplicationPage />);
+    it("should close the confirmation modal when cancel is selected", async () => {
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [application],
+      });
+      fireEvent.click(screen.getByText(/Approve/));
+      await screen.findByTestId("confirm-modal");
+      fireEvent.click(screen.getByText("Cancel"));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("confirm-modal")).not.toBeInTheDocument();
+      });
+    });
+
+    it("shows error modal when reviewing application fails", async () => {
+      const transactionBlockNumber = 10;
+      (updateApplicationStatuses as jest.Mock).mockResolvedValue({
+        transactionBlockNumber,
+      });
+
+      renderWithContext(
+        <ViewApplicationPage />,
+        {
+          applications: [application],
+        },
+        {
+          contractUpdatingStatus: ProgressStatus.IS_ERROR,
+        }
+      );
+
+      fireEvent.click(screen.getByText(/Approve/));
+
+      await screen.findByTestId("confirm-modal");
+      fireEvent.click(screen.getByText("Confirm"));
+
+      expect(await screen.findByTestId("error-modal")).toBeInTheDocument();
+    });
+
+    it("choosing done closes the error modal", async () => {
+      const transactionBlockNumber = 10;
+      (updateApplicationStatuses as jest.Mock).mockResolvedValue({
+        transactionBlockNumber,
+      });
+
+      renderWithContext(
+        <ViewApplicationPage />,
+        {
+          applications: [application],
+        },
+        {
+          contractUpdatingStatus: ProgressStatus.IS_ERROR,
+        }
+      );
+
+      fireEvent.click(screen.getByText(/Approve/));
+
+      await screen.findByTestId("confirm-modal");
+      fireEvent.click(screen.getByText("Confirm"));
+
+      await screen.findByTestId("error-modal");
+
+      const done = await screen.findByTestId("done");
+      await act(() => {
+        fireEvent.click(done);
+      });
+
+      expect(screen.queryByTestId("error-modal")).not.toBeInTheDocument();
+    });
+  });
+});
+
+describe("ViewApplicationPage verification badges", () => {
+  beforeEach(() => {
+    (useWallet as jest.Mock).mockImplementation(() => mockWallet);
+    (useSwitchNetwork as any).mockReturnValue({ chains: [] });
+    (useDisconnect as any).mockReturnValue({});
+  });
+
+  it("shows project twitter with no badge when there is no credential", async () => {
+    const provider = "twitter";
+    verifyCredentialMock.mockResolvedValue(true);
+    const expectedTwitterHandle = faker.random.word();
+    const grantApplicationWithNoVc = makeGrantApplicationData({
+      applicationIdOverride,
+      projectTwitterOverride: expectedTwitterHandle,
+    });
+
+    grantApplicationWithNoVc.project!.credentials = {};
+    (getApplicationsByRoundId as any).mockResolvedValue(
+      grantApplicationWithNoVc
+    );
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplicationWithNoVc],
+    });
+
+    expect(await screen.findByText(expectedTwitterHandle)).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential`)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential-unverified`)
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows project github organization with no badge when there is no credential", async () => {
+    const provider = "github";
+    verifyCredentialMock.mockResolvedValue(true);
+    const expectedGithubOrganizationName = faker.random.word();
+    const grantApplicationWithNoVc = makeGrantApplicationData({
+      applicationIdOverride,
+      projectGithubOverride: expectedGithubOrganizationName,
+    });
+    grantApplicationWithNoVc.project!.credentials = {};
+    (getApplicationsByRoundId as any).mockResolvedValue(
+      grantApplicationWithNoVc
+    );
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplicationWithNoVc],
+    });
+
+    expect(
+      await screen.findByText(expectedGithubOrganizationName)
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential`)
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential-unverified`)
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["github", { projectGithubOverride: "some github handle" }],
+    ["twitter", { projectTwitterOverride: "some twitter handle" }],
+  ])(
+    "shows project %s verification when you have a valid verifiable credential for it",
+    async (provider: string, overrides: MakeGrantApplicationDataParams) => {
+      verifyCredentialMock.mockResolvedValue(true);
+      const grantApplicationWithValidVc = makeGrantApplicationData({
+        applicationIdOverride,
+        ...overrides,
+      });
+      (getApplicationsByRoundId as any).mockResolvedValue(
+        grantApplicationWithValidVc
+      );
+
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [grantApplicationWithValidVc],
+      });
+
+      expect(
+        await screen.findByTestId(`${provider}-verifiable-credential`)
+      ).toBeInTheDocument();
+    }
+  );
+
+  it("shows verified twitter badge when project twitter handle matches vc regardless of casing", async () => {
+    const provider = "twitter";
+    const handle = "someHandle";
+    verifyCredentialMock.mockResolvedValue(true);
+    const grantApplication = makeGrantApplicationData({
+      applicationIdOverride,
+      projectTwitterOverride: handle.toLowerCase(),
+    });
+    grantApplication.project!.projectTwitter = handle.toUpperCase();
+    (getApplicationsByRoundId as any).mockResolvedValue(grantApplication);
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplication],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`${provider}-verifiable-credential`)
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential-unverified`)
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows verified github badge when project github handle matches vc regardless of casing", async () => {
+    const provider = "github";
+    const handle = "someHandle";
+    verifyCredentialMock.mockResolvedValue(true);
+    const grantApplication = makeGrantApplicationData({
+      applicationIdOverride,
+      projectGithubOverride: handle.toLowerCase(),
+    });
+    grantApplication.project!.projectGithub = handle.toUpperCase();
+    (getApplicationsByRoundId as any).mockResolvedValue(grantApplication);
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplication],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`${provider}-verifiable-credential`)
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential-unverified`)
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["github", { projectGithubOverride: "some github handle" }],
+    ["twitter", { projectTwitterOverride: "some twitter handle" }],
+  ])(
+    "shows no project %s verification when you have an invalid verifiable credential for it",
+    async (provider: string, overrides: MakeGrantApplicationDataParams) => {
+      verifyCredentialMock.mockResolvedValue(false);
+      const grantApplicationStub = makeGrantApplicationData({
+        applicationIdOverride,
+        ...overrides,
+      });
+      (getApplicationsByRoundId as any).mockResolvedValue(grantApplicationStub);
+
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [grantApplicationStub],
+        isLoading: false,
+      });
 
       await waitFor(() => {
         expect(
           screen.getByTestId(`${provider}-verifiable-credential-unverified`)
         ).toBeInTheDocument();
       });
-
       expect(
         screen.queryByTestId(`${provider}-verifiable-credential`)
       ).not.toBeInTheDocument();
@@ -80,50 +460,20 @@ describe("ViewApplicationPage", () => {
     "shows no project %s verification when you do not have a verifiable credential for it",
     async (provider) => {
       const noGithubVerification = {
-        application: makeGrantApplicationData(),
+        application: makeGrantApplicationData({
+          applicationIdOverride,
+        }),
         isLoading: false,
       };
-      (useListGrantApplicationsQuery as any).mockReturnValue(
-        noGithubVerification
+      (getApplicationsByRoundId as any).mockResolvedValue(
+        noGithubVerification.application
       );
-      (useUpdateGrantApplicationMutation as any).mockReturnValue([
-        jest.fn(),
-        { isLoading: false },
-      ]);
 
-      renderWrapped(<ViewApplicationPage />);
+      renderWithContext(<ViewApplicationPage />, noGithubVerification);
 
       expect(
         screen.queryByTestId(`${provider}-verifiable-credential`)
       ).not.toBeInTheDocument();
-    }
-  );
-
-  it.each([
-    ["github", { github: githubCredentialData }],
-    ["twitter", { twitter: twitterCredentialData }],
-  ])(
-    "shows project %s verification when you have a valid verifiable credential for it",
-    async (provider: string, projectCredentials: ProjectCredentials) => {
-      verifyCredentialMock.mockResolvedValue(true);
-
-      const grantApplicationWithValidVc = {
-        application: makeGrantApplicationData({}, projectCredentials),
-      };
-
-      (useListGrantApplicationsQuery as any).mockReturnValue(
-        grantApplicationWithValidVc
-      );
-      (useUpdateGrantApplicationMutation as any).mockReturnValue([
-        jest.fn(),
-        { isLoading: false },
-      ]);
-
-      renderWrapped(<ViewApplicationPage />);
-
-      expect(
-        await screen.findByTestId(`${provider}-verifiable-credential`)
-      ).toBeInTheDocument();
     }
   );
 
@@ -131,95 +481,145 @@ describe("ViewApplicationPage", () => {
     verifyCredentialMock.mockResolvedValue(true);
     const fakeIssuer =
       "did:key:z6Mks2YNwbkzDgKLuQs1TS3whP9RdXrGXtVqt5JcCLoQu86W";
+    const grantApplication = makeGrantApplicationData({
+      applicationIdOverride,
+      projectGithubOverride: "whatever",
+    });
+    grantApplication.project!.credentials["github"].issuer = fakeIssuer;
+    (getApplicationsByRoundId as any).mockResolvedValue(grantApplication);
 
-    const projectCredentials = { github: { ...githubCredentialData } };
-    projectCredentials.github.issuer = fakeIssuer;
-
-    const grantApplication = {
-      application: makeGrantApplicationData({}, projectCredentials),
-    };
-
-    (useListGrantApplicationsQuery as any).mockReturnValue(grantApplication);
-    (useUpdateGrantApplicationMutation as any).mockReturnValue([
-      jest.fn(),
-      { isLoading: false },
-    ]);
-
-    renderWrapped(<ViewApplicationPage />);
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplication],
+    });
 
     await waitFor(() => {
       expect(
         screen.getByTestId(`github-verifiable-credential-unverified`)
       ).toBeInTheDocument();
     });
-
     expect(
       screen.queryByTestId(`github-verifiable-credential`)
     ).not.toBeInTheDocument();
   });
 
+  it("shows no twitter badge when project twitter handle does not match verifiable credential", async () => {
+    const provider = "twitter";
+    const handle = "someHandle";
+    verifyCredentialMock.mockResolvedValue(true);
+    const grantApplication = makeGrantApplicationData({
+      applicationIdOverride,
+      projectTwitterOverride: handle,
+    });
+    grantApplication.project!.projectTwitter = "not some handle";
+    (getApplicationsByRoundId as any).mockResolvedValue(grantApplication);
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplication],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`${provider}-verifiable-credential-unverified`)
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential`)
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows no github badge when project github handle does not match verifiable credential", async () => {
+    const provider = "github";
+    const handle = "someHandle";
+    verifyCredentialMock.mockResolvedValue(true);
+    const grantApplication = makeGrantApplicationData({
+      applicationIdOverride,
+      projectGithubOverride: handle,
+    });
+    grantApplication.project!.projectGithub = "not some handle";
+    (getApplicationsByRoundId as any).mockResolvedValue(grantApplication);
+
+    renderWithContext(<ViewApplicationPage />, {
+      applications: [grantApplication],
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`${provider}-verifiable-credential-unverified`)
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByTestId(`${provider}-verifiable-credential`)
+    ).not.toBeInTheDocument();
+  });
+
   it.each([
-    {
-      provider: "github",
-      projectCredentials: {
-        github: githubCredentialData,
-      } as ProjectCredentials,
-      vcProviderString: "ClearTextGithubOrg#gitcoinco#6887938",
-      question: "Github Organization",
-      applicationAccountName: "notgitcoinco",
-    },
-    {
-      provider: "twitter",
-      projectCredentials: {
-        twitter: twitterCredentialData,
-      } as ProjectCredentials,
-      vcProviderString: "ClearTextTwitter#DpoppDev",
-      question: "Twitter",
-      applicationAccountName: "notDpoppDev",
-    },
+    ["github", { projectGithubOverride: "some github" }],
+    ["twitter", { projectTwitterOverride: "some twitter" }],
   ])(
-    "shows invalid badge for $provider when $question account name in grant application doesn't match account name in VC provider",
-    async ({
-      provider,
-      projectCredentials,
-      vcProviderString,
-      question,
-      applicationAccountName,
-    }) => {
-      projectCredentials[provider].credentialSubject.provider =
-        vcProviderString;
+    "shows invalid $provider badge when project owner address does not match vc",
+    async (provider, overrides: MakeGrantApplicationDataParams) => {
+      verifyCredentialMock.mockResolvedValue(true);
+      const grantApplicationData = makeGrantApplicationData({
+        applicationIdOverride,
+        ...overrides,
+      });
+      grantApplicationData.project!.owners.forEach((it) => {
+        it.address = "bad";
+      });
+      (getApplicationsByRoundId as any).mockResolvedValue(grantApplicationData);
 
-      const grantApplication = {
-        application: makeGrantApplicationData(
-          {
-            answers: [
-              { questionId: 0, question, answer: applicationAccountName },
-            ],
-          },
-          projectCredentials
-        ),
-      };
-
-      (useListGrantApplicationsQuery as any).mockReturnValue(grantApplication);
-      (useUpdateGrantApplicationMutation as any).mockReturnValue([
-        jest.fn(),
-        { isLoading: false },
-      ]);
-      (useListRoundsQuery as any).mockReturnValue({ round: {} });
-      (useSwitchNetwork as any).mockReturnValue({ chains: [] });
-      (useDisconnect as any).mockReturnValue({});
-
-      renderWrapped(<ViewApplicationPage />);
-
-      await waitFor(() => {
-        expect(
-          screen.getByTestId(`${provider}-verifiable-credential-unverified`)
-        ).toBeInTheDocument();
+      renderWithContext(<ViewApplicationPage />, {
+        applications: [grantApplicationData],
       });
 
+      await screen.findByTestId(`${provider}-verifiable-credential-unverified`);
       expect(
         screen.queryByTestId(`${provider}-verifiable-credential`)
       ).not.toBeInTheDocument();
     }
   );
 });
+
+export const renderWithContext = (
+  ui: JSX.Element,
+  applicationStateOverrides: Partial<ApplicationState> = {},
+  bulkUpdateGrantApplicationStateOverrides: Partial<BulkUpdateGrantApplicationState> = {},
+  dispatch: any = jest.fn()
+) =>
+  render(
+    <MemoryRouter>
+      <BulkUpdateGrantApplicationContext.Provider
+        value={{
+          ...initialBulkUpdateGrantApplicationState,
+          ...bulkUpdateGrantApplicationStateOverrides,
+        }}
+      >
+        <RoundContext.Provider
+          value={{
+            state: {
+              data: [
+                makeRoundData({
+                  id: roundIdOverride,
+                  operatorWallets: [mockAddress],
+                }),
+              ],
+              fetchRoundStatus: ProgressStatus.IS_SUCCESS,
+            },
+            dispatch,
+          }}
+        >
+          <ApplicationContext.Provider
+            value={{
+              state: {
+                ...initialApplicationState,
+                ...applicationStateOverrides,
+              },
+              dispatch,
+            }}
+          >
+            {ui}
+          </ApplicationContext.Provider>
+        </RoundContext.Provider>
+      </BulkUpdateGrantApplicationContext.Provider>
+    </MemoryRouter>
+  );

@@ -1,8 +1,37 @@
 const webpack = require("webpack");
+const SentryWebpackPlugin = require("@sentry/webpack-plugin");
+const CracoEsbuildPlugin = require("craco-esbuild");
+const path = require("path");
+
+const plugins = [
+  new webpack.ProvidePlugin({
+    Buffer: ["buffer", "Buffer"],
+  }),
+];
+
+if (process.env.REACT_APP_ENV === "production") {
+  plugins.push(
+    new SentryWebpackPlugin({
+      org: "gitcoin-protocol",
+      project: "grants-round-ge",
+
+      // Specify the directory containing build artifacts
+      include: "./build",
+
+      // Auth tokens can be obtained from https://sentry.io/settings/account/api/auth-tokens/
+      // and needs the `project:releases` and `org:read` scopes
+      authToken: process.env.REACT_APP_SENTRY_AUTH_TOKEN,
+
+      // Optionally uncomment the line below to override automatic release name detection
+      // release: process.env.RELEASE,
+    })
+  );
+}
 
 module.exports = {
   webpack: {
     configure: {
+      devtool: "source-map", // Source map generation must be turned on
       module: {
         rules: [
           {
@@ -33,7 +62,7 @@ module.exports = {
         // See: https://github.com/facebook/create-react-app/discussions/11278#discussioncomment-1780169
         /**
          *
-         * @param {import('webpack').WebpackError} warning
+         * @param {import("webpack").WebpackError} warning
          * @returns {boolean}
          */
         function ignoreSourcemapsloaderWarnings(warning) {
@@ -47,11 +76,16 @@ module.exports = {
       ],
     },
     plugins: {
-      add: [
-        new webpack.ProvidePlugin({
-          Buffer: ["buffer", "Buffer"],
-        }),
-      ],
+      add: plugins,
     },
   },
+  plugins: [
+    {
+      plugin: CracoEsbuildPlugin,
+      options: {
+        includePaths: [path.join(__dirname, `../common/src`)],
+        skipEsbuildJest: true,
+      },
+    },
+  ],
 };

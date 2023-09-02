@@ -1,24 +1,26 @@
 import { getProgramById, listPrograms } from "../program";
 import { Program } from "../types";
 import { makeProgramData } from "../../../test-utils";
-import { graphql_fetch, fetchFromIPFS } from "../utils";
+import { fetchFromIPFS, CHAINS } from "../utils";
+import { graphql_fetch } from "common";
+import { ChainId } from "common";
 
 jest.mock("../utils", () => ({
   ...jest.requireActual("../utils"),
-  graphql_fetch: jest.fn(),
   fetchFromIPFS: jest.fn(),
 }));
 
-jest.mock("../utils", () => ({
-  ...jest.requireActual("../utils"),
+jest.mock("common", () => ({
+  ...jest.requireActual("common"),
   graphql_fetch: jest.fn(),
-  fetchFromIPFS: jest.fn(),
 }));
 
 describe("listPrograms", () => {
   it("calls the graphql endpoint and maps the metadata from IPFS", async () => {
     // const address = "0x0"
-    const expectedProgram = makeProgramData();
+    const expectedProgram = makeProgramData({
+      chain: CHAINS[ChainId.GOERLI_CHAIN_ID],
+    });
     const expectedPrograms: Program[] = [expectedProgram];
     (graphql_fetch as jest.Mock).mockResolvedValue({
       data: {
@@ -49,7 +51,9 @@ describe("listPrograms", () => {
     });
 
     const actualPrograms = await listPrograms("0x0", {
-      getNetwork: async () => Promise.resolve({ chainId: "ahjdfaskjlfja" }),
+      getNetwork: async () =>
+        // @ts-expect-error Test file
+        Promise.resolve({ chainId: ChainId.GOERLI_CHAIN_ID }),
     });
 
     expect(actualPrograms).toEqual(expectedPrograms);
@@ -58,8 +62,10 @@ describe("listPrograms", () => {
 
 describe("getProgramById", () => {
   it("calls the graphql endpoint and maps the metadata from IPFS", async () => {
-    const expectedProgram = makeProgramData();
-    const programId = expectedProgram.id!;
+    const expectedProgram = makeProgramData({
+      chain: CHAINS[ChainId.GOERLI_CHAIN_ID],
+    });
+    const programId = expectedProgram.id;
     (graphql_fetch as jest.Mock).mockResolvedValue({
       data: {
         programs: [
@@ -87,8 +93,10 @@ describe("getProgramById", () => {
       name: expectedProgram.metadata?.name,
     });
 
-    const actualProgram = await getProgramById(programId, {
-      getNetwork: async () => Promise.resolve({ chainId: "myChainId" }),
+    const actualProgram = await getProgramById(programId as string, {
+      getNetwork: async () =>
+        // @ts-expect-error Test file
+        Promise.resolve({ chainId: ChainId.GOERLI_CHAIN_ID }),
     });
 
     expect(actualProgram).toEqual(expectedProgram);
